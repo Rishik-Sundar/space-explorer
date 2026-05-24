@@ -1427,6 +1427,117 @@ function buildISS() {
 const iss = buildISS();
 scene.add(iss);
 let issAngle = Math.random() * Math.PI * 2;
+
+// === ISS INTERIOR (walk inside when docked) ===
+function buildISSInterior() {
+  const g = new THREE.Group();
+  // Cylindrical module wall (Destiny lab style)
+  const wallGeo = new THREE.CylinderGeometry(2.6, 2.6, 9, 32, 1, true);
+  wallGeo.rotateX(Math.PI / 2);
+  g.add(new THREE.Mesh(wallGeo, new THREE.MeshStandardMaterial({
+    color: 0xe0e2e6, metalness: 0.45, roughness: 0.55, side: THREE.BackSide
+  })));
+  const floorMesh = new THREE.Mesh(
+    new THREE.BoxGeometry(4.4, 0.1, 8.5),
+    new THREE.MeshStandardMaterial({ color: 0x4a5862, metalness: 0.55, roughness: 0.5 })
+  );
+  floorMesh.position.y = -1.7;
+  g.add(floorMesh);
+  for (let i = -3; i <= 3; i++) {
+    const stripe = new THREE.Mesh(
+      new THREE.BoxGeometry(4.3, 0.12, 0.05),
+      new THREE.MeshStandardMaterial({ color: 0x202830, metalness: 0.6, roughness: 0.5 })
+    );
+    stripe.position.set(0, -1.62, i * 1.0);
+    g.add(stripe);
+  }
+  const windowMat = new THREE.MeshBasicMaterial({ color: 0x88ddff, transparent: true, opacity: 0.35 });
+  for (let i = -2; i <= 2; i++) {
+    const w1 = new THREE.Mesh(new THREE.PlaneGeometry(0.7, 1.1), windowMat);
+    w1.position.set(2.55, 0.2, i * 1.6);
+    w1.rotation.y = -Math.PI / 2;
+    g.add(w1);
+    const f1 = new THREE.Mesh(
+      new THREE.BoxGeometry(0.04, 1.3, 0.9),
+      new THREE.MeshStandardMaterial({ color: 0x88aabb, metalness: 0.7, roughness: 0.4 })
+    );
+    f1.position.set(2.58, 0.2, i * 1.6);
+    g.add(f1);
+    const w2 = w1.clone();
+    w2.position.x = -2.55;
+    w2.rotation.y = Math.PI / 2;
+    g.add(w2);
+    const f2 = f1.clone();
+    f2.position.x = -2.58;
+    g.add(f2);
+  }
+  for (const side of [-1, 1]) {
+    for (let i = -1; i <= 1; i++) {
+      const rack = new THREE.Mesh(
+        new THREE.BoxGeometry(0.5, 1.6, 1.2),
+        new THREE.MeshStandardMaterial({ color: 0x3a4550, metalness: 0.6, roughness: 0.45 })
+      );
+      rack.position.set(side * 2.05, -0.7, i * 2.5);
+      g.add(rack);
+      for (let j = 0; j < 6; j++) {
+        const ledColor = [0xff3344, 0x33ff66, 0xffff44, 0x33aaff][j % 4];
+        const led = new THREE.Mesh(
+          new THREE.SphereGeometry(0.05, 6, 6),
+          new THREE.MeshBasicMaterial({ color: ledColor })
+        );
+        led.position.set(side * 1.78, -0.6 + (j - 2.5) * 0.18, i * 2.5);
+        g.add(led);
+      }
+      const screen = new THREE.Mesh(
+        new THREE.PlaneGeometry(0.4, 0.25),
+        new THREE.MeshBasicMaterial({ color: 0x0088cc, transparent: true, opacity: 0.7 })
+      );
+      screen.position.set(side * 1.78, 0.15, i * 2.5);
+      screen.rotation.y = side * Math.PI / 2;
+      g.add(screen);
+    }
+  }
+  for (let i = -3; i <= 3; i++) {
+    const ceilLight = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.9, 0.15),
+      new THREE.MeshBasicMaterial({ color: 0xfff0d8 })
+    );
+    ceilLight.position.set(0, 2.4, i * 1.2);
+    ceilLight.rotation.x = Math.PI / 2;
+    g.add(ceilLight);
+  }
+  const intLight = new THREE.PointLight(0xfff2dc, 1.8, 12, 1.2);
+  intLight.position.set(0, 1.6, 0);
+  g.add(intLight);
+  const hatchRing = new THREE.Mesh(
+    new THREE.TorusGeometry(0.85, 0.1, 12, 32),
+    new THREE.MeshStandardMaterial({ color: 0x88a0b8, metalness: 0.75, roughness: 0.35 })
+  );
+  hatchRing.position.set(0, 0, -4.0);
+  g.add(hatchRing);
+  const hatchDoor = new THREE.Mesh(
+    new THREE.CircleGeometry(0.8, 24),
+    new THREE.MeshStandardMaterial({ color: 0xb8c4d0, metalness: 0.55, roughness: 0.4 })
+  );
+  hatchDoor.position.set(0, 0, -4.05);
+  g.add(hatchDoor);
+  for (const side of [-1, 1]) {
+    const rail = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.04, 0.04, 7, 8),
+      new THREE.MeshStandardMaterial({ color: 0xeeeeee, metalness: 0.5, roughness: 0.3 })
+    );
+    rail.rotation.x = Math.PI / 2;
+    rail.position.set(side * 1.7, 1.0, 0);
+    g.add(rail);
+  }
+  g.visible = false;
+  return g;
+}
+const issInterior = buildISSInterior();
+scene.add(issInterior);
+let issInsideMode = false;
+const issWalkPos = new THREE.Vector3(0, 0.3, 0);
+let issWalkYaw = 0, issWalkPitch = 0;
 const ISS_ORBIT_R = 55;
 const ISS_ORBIT_TILT = 0.45;
 
@@ -1952,27 +2063,29 @@ function buildSolarArray() {
   const panelMat = new THREE.MeshStandardMaterial({
     map: solarTex, metalness: 0.3, roughness: 0.45, side: THREE.DoubleSide
   });
+  // Two HUGE solar arrays (bigger panels, two segments each side like real shuttle arrays)
   for (let i = 0; i < 2; i++) {
     const dir = i === 0 ? -1 : 1;
-    const panel = new THREE.Mesh(new THREE.BoxGeometry(3.9, 0.08, 1.7), panelMat);
-    panel.position.x = dir * 2.25;
-    panel.position.y = -boomLen - 0.1;
-    arr.add(panel);
-    for (const zEdge of [-0.85, 0.85]) {
-      const f = new THREE.Mesh(new THREE.BoxGeometry(4.0, 0.1, 0.05), boomMat);
-      f.position.x = dir * 2.25;
-      f.position.y = -boomLen - 0.1;
-      f.position.z = zEdge;
-      arr.add(f);
+    for (let segIdx = 0; segIdx < 2; segIdx++) {
+      const segOffsetX = dir * (2.5 + segIdx * 5.2);
+      const panel = new THREE.Mesh(new THREE.BoxGeometry(5.0, 0.08, 2.2), panelMat);
+      panel.position.x = segOffsetX;
+      panel.position.y = -boomLen - 0.1;
+      arr.add(panel);
+      // Frame
+      for (const zEdge of [-1.1, 1.1]) {
+        const f = new THREE.Mesh(new THREE.BoxGeometry(5.1, 0.1, 0.06), boomMat);
+        f.position.set(segOffsetX, -boomLen - 0.1, zEdge);
+        arr.add(f);
+      }
+      // Glow trim along leading edge
+      const edgeGlow = new THREE.Mesh(
+        new THREE.BoxGeometry(5.05, 0.02, 0.02),
+        new THREE.MeshBasicMaterial({ color: 0x44aaff })
+      );
+      edgeGlow.position.set(segOffsetX, -boomLen - 0.04, 0);
+      arr.add(edgeGlow);
     }
-    // Panel edge glow
-    const edgeGlow = new THREE.Mesh(
-      new THREE.BoxGeometry(3.95, 0.02, 0.02),
-      new THREE.MeshBasicMaterial({ color: 0x44aaff })
-    );
-    edgeGlow.position.x = dir * 2.25;
-    edgeGlow.position.y = -boomLen - 0.04;
-    arr.add(edgeGlow);
   }
   return arr;
 }
@@ -1988,6 +2101,78 @@ ship.add(crewModule);
 const solarArray = buildSolarArray();
 solarArray.position.y = -2.0;
 ship.add(solarArray);
+
+// === EXTRA HAIL MARY DETAIL ===
+// RCS thruster clusters (small cylinders on tank corners for orientation control)
+const rcsMat = new THREE.MeshStandardMaterial({ color: 0x55585e, metalness: 0.85, roughness: 0.4 });
+const rcsPositions = [
+  [1.1, 1.8, -2.5], [-1.1, 1.8, -2.5], [1.1, 1.8, 2.5], [-1.1, 1.8, 2.5],
+  [1.1, -1.8, -2.5], [-1.1, -1.8, -2.5], [1.1, -1.8, 2.5], [-1.1, -1.8, 2.5]
+];
+for (const [x, y, z] of rcsPositions) {
+  const cluster = new THREE.Group();
+  // 4 small thrusters pointing in 4 directions
+  for (let dir = 0; dir < 4; dir++) {
+    const ang = dir * Math.PI / 2;
+    const thr = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.05, 0.22, 8), rcsMat);
+    thr.position.set(Math.cos(ang) * 0.12, Math.sin(ang) * 0.12, 0);
+    thr.rotation.z = -ang;
+    cluster.add(thr);
+  }
+  cluster.position.set(x, y, z);
+  ship.add(cluster);
+}
+
+// Extra antennae array on crew module top
+const antMast = new THREE.Mesh(
+  new THREE.CylinderGeometry(0.03, 0.03, 2.2, 6),
+  new THREE.MeshStandardMaterial({ color: 0xb0b4ba, metalness: 0.7, roughness: 0.4 })
+);
+antMast.position.set(0, 1.5, -0.5);
+ship.add(antMast);
+const dish2 = new THREE.Mesh(
+  new THREE.SphereGeometry(0.28, 16, 10, 0, Math.PI * 2, 0, Math.PI / 2),
+  new THREE.MeshStandardMaterial({ color: 0xe6e6ea, metalness: 0.4, roughness: 0.5, side: THREE.DoubleSide })
+);
+dish2.position.set(0, 2.65, -0.5);
+dish2.rotation.x = Math.PI * 0.45;
+ship.add(dish2);
+// Tip light on antenna
+const antTip = new THREE.Mesh(
+  new THREE.SphereGeometry(0.06, 8, 8),
+  new THREE.MeshBasicMaterial({ color: 0xffffaa })
+);
+antTip.position.set(0, 2.55, -0.5);
+ship.add(antTip);
+
+// Heat radiator extensions (larger, more visible)
+for (const side of [-1, 1]) {
+  const rad = new THREE.Mesh(
+    new THREE.BoxGeometry(0.06, 2.2, 2.8),
+    new THREE.MeshStandardMaterial({ color: 0xeeeef2, metalness: 0.45, roughness: 0.6, side: THREE.DoubleSide })
+  );
+  rad.position.set(side * 1.6, 0, 1.0);
+  ship.add(rad);
+  // Cooling lines (visible glow)
+  for (let i = 0; i < 4; i++) {
+    const line = new THREE.Mesh(
+      new THREE.BoxGeometry(0.04, 0.04, 2.7),
+      new THREE.MeshBasicMaterial({ color: 0xff8855, transparent: true, opacity: 0.6 })
+    );
+    line.position.set(side * 1.6, -0.9 + i * 0.6, 1.0);
+    ship.add(line);
+  }
+}
+
+// Mid-ship lateral strut connecting tanks (gives structural realism)
+for (const z of [-2, 0, 2]) {
+  const strut = new THREE.Mesh(
+    new THREE.BoxGeometry(0.18, 2.6, 0.18),
+    new THREE.MeshStandardMaterial({ color: 0x6a6c70, metalness: 0.7, roughness: 0.45 })
+  );
+  strut.position.set(0, 0, z);
+  ship.add(strut);
+}
 
 // === STRAP-ON BOOSTERS (separable at T+70) ===
 function buildBooster() {
@@ -2735,20 +2920,35 @@ window.addEventListener('keydown', e => {
   keys[e.code] = true;
   if (['Space', 'KeyW', 'KeyS', 'KeyA', 'KeyD', 'KeyH'].includes(e.code)) e.preventDefault();
   if (e.code === 'KeyH') handleHotClick();
-  // G toggles walk-around-inside-ship mode (only in orbit)
+  // G toggles walk-around-inside-ship OR exits ISS interior
   if (e.code === 'KeyG' && gamePhase === 'play') {
-    walkMode = !walkMode;
-    interior.visible = walkMode;
-    if (walkMode) {
-      walkPos.set(0, 0.3, 0.5);
-      walkYaw = 0;
-      walkPitch = 0;
-      cameraModeEl.firstChild.textContent = 'WALKING INSIDE SHIP';
+    if (issInsideMode) {
+      // Exit ISS — back to ship
+      issInsideMode = false;
+      issInterior.visible = false;
+      // Push ship slightly away from ISS so we don't immediately re-dock
+      const awayDir = ship.position.clone().sub(iss.position).normalize();
+      if (awayDir.lengthSq() < 0.01) awayDir.set(1, 0, 0);
+      ship.position.copy(iss.position).addScaledVector(awayDir, 150);
+      issDocked = false; // allow re-docking later
+      cameraModeEl.firstChild.textContent = 'EXITED ISS';
       cameraModeEl.classList.add('show');
       clearTimeout(updateCameraModeUI._t);
       updateCameraModeUI._t = setTimeout(() => cameraModeEl.classList.remove('show'), 2200);
     } else {
-      updateCameraModeUI();
+      walkMode = !walkMode;
+      interior.visible = walkMode;
+      if (walkMode) {
+        walkPos.set(0, 0.3, 0.5);
+        walkYaw = 0;
+        walkPitch = 0;
+        cameraModeEl.firstChild.textContent = 'WALKING INSIDE SHIP';
+        cameraModeEl.classList.add('show');
+        clearTimeout(updateCameraModeUI._t);
+        updateCameraModeUI._t = setTimeout(() => cameraModeEl.classList.remove('show'), 2200);
+      } else {
+        updateCameraModeUI();
+      }
     }
   }
 });
@@ -2964,6 +3164,12 @@ function animate() {
   // Orient along orbit direction
   const issForwardDir = new THREE.Vector3(-Math.sin(issAngle), 0, Math.cos(issAngle));
   iss.lookAt(iss.position.clone().add(issForwardDir));
+  // Keep interior glued to the ISS so player walks around in it as the station orbits
+  if (issInsideMode) {
+    issInterior.position.copy(iss.position);
+    const dirToEarth = LAUNCH_EARTH_POS.clone().sub(iss.position).normalize();
+    issInterior.lookAt(iss.position.clone().add(dirToEarth));
+  }
 
   // Update separated booster debris
   // Update crash debris (ship pieces flying out from explosion)
@@ -3050,10 +3256,21 @@ function animate() {
     const dDist = ship.position.distanceTo(iss.position);
     if (dDist < 120) { // very generous docking radius (was 60)
       issDocked = true;
-      dockingName.textContent = 'INTERNATIONAL SPACE STATION  ·  FUEL REFILLED';
+      dockingName.textContent = 'INTERNATIONAL SPACE STATION  ·  FUEL REFILLED  ·  WALK INSIDE';
       dockingMsg.classList.add('show');
       dockingTimer = 4.0;
-      fuel = 1.0; // refuel at ISS
+      fuel = 1.0;
+      // Enter ISS interior walk mode
+      issInsideMode = true;
+      issInterior.visible = true;
+      issInterior.position.copy(iss.position);
+      // Orient interior so Earth is visible out the windows
+      const dirToEarth = LAUNCH_EARTH_POS.clone().sub(iss.position).normalize();
+      issInterior.lookAt(iss.position.clone().add(dirToEarth));
+      issWalkPos.set(0, 0.3, 0);
+      issWalkYaw = 0;
+      issWalkPitch = 0;
+      velocity.set(0, 0, 0);
     }
   }
   // ISS direction marker — visible cyan orb pointing at ISS
@@ -3750,11 +3967,40 @@ function animate() {
       camera.fov += (targetFOV - camera.fov) * 0.08;
       camera.updateProjectionMatrix();
     }
+  } else if (issInsideMode && gamePhase === 'play') {
+    // ISS INTERIOR — walk inside the space station
+    // Mouse looks around
+    if (pointerLocked) {
+      issWalkYaw -= pendingYaw * 0.8;
+      issWalkPitch -= pendingPitch * 0.8;
+      issWalkPitch = Math.max(-1.3, Math.min(1.3, issWalkPitch));
+      pendingPitch = 0; pendingYaw = 0;
+    }
+    // WASD walks
+    const moveSpeed = 2.5;
+    const fwdDir = new THREE.Vector3(-Math.sin(issWalkYaw), 0, -Math.cos(issWalkYaw));
+    const rightDir = new THREE.Vector3(Math.cos(issWalkYaw), 0, -Math.sin(issWalkYaw));
+    if (keys.KeyW) issWalkPos.addScaledVector(fwdDir, moveSpeed * dt);
+    if (keys.KeyS) issWalkPos.addScaledVector(fwdDir, -moveSpeed * dt);
+    if (keys.KeyA) issWalkPos.addScaledVector(rightDir, -moveSpeed * dt);
+    if (keys.KeyD) issWalkPos.addScaledVector(rightDir, moveSpeed * dt);
+    issWalkPos.x = Math.max(-1.8, Math.min(1.8, issWalkPos.x));
+    issWalkPos.z = Math.max(-3.5, Math.min(3.5, issWalkPos.z));
+    issWalkPos.y = 0.3;
+    // Camera position
+    const camLocal = issWalkPos.clone();
+    camera.position.copy(issInterior.localToWorld(camLocal));
+    const qInt = issInterior.quaternion.clone();
+    const qYaw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), issWalkYaw);
+    const qPitch = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), issWalkPitch);
+    camera.quaternion.copy(qInt).multiply(qYaw).multiply(qPitch);
+    const targetFOV = 82;
+    camera.fov += (targetFOV - camera.fov) * 0.1;
+    camera.updateProjectionMatrix();
   } else if (walkMode && gamePhase === 'play') {
     // WALK MODE — camera is inside the ship at walkPos, free-look with mouse
     const camLocal = walkPos.clone();
     camera.position.copy(ship.localToWorld(camLocal));
-    // Build camera quaternion: ship orientation × walk yaw × walk pitch
     const qShip = ship.quaternion.clone();
     const qYaw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), walkYaw);
     const qPitch = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), walkPitch);
