@@ -354,6 +354,25 @@
     letter-spacing: 2px;
   }
   #stress-hud.show { display: block; }
+  #fuel-hud {
+    position: fixed;
+    bottom: 110px; right: 20px;
+    z-index: 12; pointer-events: none;
+    background: rgba(0, 20, 40, 0.45);
+    border: 1px solid rgba(100, 220, 255, 0.5);
+    padding: 8px 14px;
+    color: #6df;
+    font-size: 11px; letter-spacing: 2px;
+    text-align: right;
+    box-shadow: 0 0 16px rgba(0, 120, 200, 0.2);
+  }
+  #fuel-label { color: #6df; opacity: 0.8; }
+  #fuel-value { color: #fff; font-size: 16px; margin-top: 2px; text-shadow: 0 0 8px rgba(100, 220, 255, 0.6); }
+  #fuel-bar { width: 180px; height: 6px; background: rgba(0,0,0,0.55); border: 1px solid rgba(100,220,255,0.4); margin-top: 6px; overflow: hidden; }
+  #fuel-fill { height: 100%; background: linear-gradient(to right, #f33, #fc6, #6f9); box-shadow: 0 0 8px rgba(100,255,150,0.5); width: 100%; transition: width 0.15s; }
+  #fuel-fill.low { background: linear-gradient(to right, #c20, #f60); }
+  #fuel-fill.empty { background: #800; box-shadow: 0 0 12px #f00; }
+
   #stress-bar {
     width: 36px; height: 240px;
     background: rgba(0, 10, 20, 0.7);
@@ -533,6 +552,11 @@
   </div>
 
   <div id="crosshair"><div id="crosshair-dot"></div></div>
+  <div id="fuel-hud">
+    <div id="fuel-label">FUEL</div>
+    <div id="fuel-value">100%</div>
+    <div id="fuel-bar"><div id="fuel-fill"></div></div>
+  </div>
 </div>
 
 <div id="camera-mode">CHASE<small>RIGHT-CLICK TO CYCLE</small></div>
@@ -2462,6 +2486,31 @@ const smokeParticles = new THREE.Points(smokeGeo, new THREE.ShaderMaterial({
 smokeParticles.frustumCulled = false; // particles move around, don't cull from initial bounding box
 scene.add(smokeParticles);
 
+// === RE-ENTRY PLASMA SHEATH ===
+// Red/orange glow around ship when descending through atmosphere at high speed
+const reentryGlow = new THREE.Mesh(
+  new THREE.SphereGeometry(4.5, 24, 24),
+  new THREE.MeshBasicMaterial({
+    color: 0xff5522,
+    transparent: true,
+    opacity: 0,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false
+  })
+);
+scene.add(reentryGlow);
+const reentryCore = new THREE.Mesh(
+  new THREE.SphereGeometry(3.0, 20, 20),
+  new THREE.MeshBasicMaterial({
+    color: 0xffaa44,
+    transparent: true,
+    opacity: 0,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false
+  })
+);
+scene.add(reentryCore);
+
 // =============================================================
 // LAUNCH GUIDANCE — target marker (orange glowing orb player aims at)
 // =============================================================
@@ -2823,6 +2872,10 @@ let walkYaw = 0, walkPitch = 0;
 // Landing state
 let landed = false;
 let landingTimer = 0;
+// Fuel — depletes when thrusting, refills on docking with ISS or landing
+let fuel = 1.0; // 0 to 1
+const FUEL_DRAIN_THRUST = 0.012; // per sec at full thrust
+const FUEL_DRAIN_BOOST = 0.030;
 let cameraMode = 0; // 0=chase, 1=orbit, 2=cockpit
 const cameraModeNames = ['CHASE', 'CINEMATIC ORBIT', 'COCKPIT'];
 
@@ -2978,7 +3031,8 @@ function animate() {
           ship.position.copy(t.pos).addScaledVector(dir, t.radius + 6);
         }
         velocity.set(0, 0, 0);
-        dockingName.textContent = `★ LANDED ON ${t.name.toUpperCase()} ★`;
+        fuel = 1.0; // refuel on landing
+        dockingName.textContent = `★ LANDED ON ${t.name.toUpperCase()}  ·  FUEL REFILLED ★`;
         dockingMsg.classList.add('show');
         break;
       }
@@ -2994,11 +3048,12 @@ function animate() {
 
   if (gamePhase === 'play' && !issDocked) {
     const dDist = ship.position.distanceTo(iss.position);
-    if (dDist < 60) { // generous docking radius
+    if (dDist < 120) { // very generous docking radius (was 60)
       issDocked = true;
-      dockingName.textContent = 'INTERNATIONAL SPACE STATION';
+      dockingName.textContent = 'INTERNATIONAL SPACE STATION  ·  FUEL REFILLED';
       dockingMsg.classList.add('show');
       dockingTimer = 4.0;
+      fuel = 1.0; // refuel at ISS
     }
   }
   // ISS direction marker — visible cyan orb pointing at ISS
@@ -3014,6 +3069,34 @@ function animate() {
     }
   } else {
     issMarker.visible = false;
+  }
+
+  // Atmospheric drag near Earth — slows ship for re-entry/landing
+  // Also drives the re-entry plasma glow
+  let reentryIntensity = 0;
+  if (gamePhase === 'play' && !walkMode && !landed) {
+    const dToEarth = ship.position.distanceTo(LAUNCH_EARTH_POS);
+    const altE = dToEarth - earthPlanet.config.radius;
+    if (altE < 60 && altE > 0) {
+      const dragFactor = 1 - (altE / 60);
+      const drag = 0.4 * dragFactor;
+      velocity.multiplyScalar(Math.pow(1 - drag, dt));
+      // Plasma sheath intensity: in atmo + going fast
+      const spd = velocity.length();
+      if (spd > 25) reentryIntensity = Math.min(1, dragFactor * (spd - 25) / 50);
+    }
+  }
+  // Update re-entry glow
+  reentryGlow.visible = reentryIntensity > 0.01;
+  reentryCore.visible = reentryIntensity > 0.01;
+  if (reentryIntensity > 0.01) {
+    reentryGlow.position.copy(ship.position);
+    reentryCore.position.copy(ship.position);
+    reentryGlow.material.opacity = reentryIntensity * 0.55;
+    reentryCore.material.opacity = reentryIntensity * 0.75;
+    const pulse = 1 + Math.sin(t * 8) * 0.05;
+    reentryGlow.scale.setScalar(pulse * (1 + reentryIntensity * 0.4));
+    reentryCore.scale.setScalar(pulse);
   }
 
   // Gravity toward all planets AND Earth's Moon (you can orbit any of them)
@@ -3321,16 +3404,32 @@ function animate() {
       return; // skip rest of frame
     }
 
-    // ===== End of launch — give player a clean orbital state =====
+    // ===== End of launch — drop into stable orbit at ISS altitude =====
     if (launchTimer >= LAUNCH_DURATION) {
       gamePhase = 'play';
       pendingPitch = 0;
       pendingYaw = 0;
-      stress = 0; // wipe any leftover stress so player doesn't insta-explode
-      // Realign velocity with ship's current forward, ensure minimum orbital speed
-      const speed = Math.max(velocity.length(), 35); // guaranteed 35 u/s minimum
-      const fw = new THREE.Vector3(0, 0, -1).applyQuaternion(ship.quaternion);
-      velocity.copy(fw).multiplyScalar(speed);
+      stress = 0;
+      // Snap ship to a stable orbit ~at ISS altitude so the player can find it
+      const earthToShip = ship.position.clone().sub(LAUNCH_EARTH_POS).normalize();
+      const targetOrbitR = 70; // just above ISS at 55, well above atmosphere at 32+58
+      ship.position.copy(LAUNCH_EARTH_POS).addScaledVector(earthToShip, targetOrbitR);
+      // Compute proper orbital velocity for this radius
+      const K = (earthPlanet.config.radius * earthPlanet.config.radius) * 1.2;
+      const orbSpeed = Math.sqrt(K / targetOrbitR);
+      // Tangent direction — perpendicular to earth-up, in plane of motion
+      const radial = earthToShip;
+      let tangent;
+      if (velocity.length() > 1) {
+        tangent = velocity.clone().sub(radial.clone().multiplyScalar(velocity.dot(radial))).normalize();
+        if (tangent.lengthSq() < 0.01) tangent = new THREE.Vector3(1, 0, 0);
+      } else {
+        tangent = new THREE.Vector3(1, 0, 0);
+      }
+      velocity.copy(tangent).multiplyScalar(orbSpeed);
+      // Point ship in direction of motion
+      const fw = velocity.clone().normalize();
+      ship.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), fw);
       // Snap camera to chase position behind ship
       const chaseOff = new THREE.Vector3(0, 4.5, 22).applyQuaternion(ship.quaternion);
       camera.position.copy(ship.position).add(chaseOff);
@@ -3395,13 +3494,19 @@ function animate() {
       }
       wasThrustingLast = thrusting;
 
-      if (thrusting) {
+      if (thrusting && fuel > 0) {
         velocity.addScaledVector(forward, (boosting ? BOOST_THRUST : THRUST) * dt);
         boostFactor = Math.min(1, boostFactor + dt * 4);
+        // Drain fuel
+        fuel = Math.max(0, fuel - (boosting ? FUEL_DRAIN_BOOST : FUEL_DRAIN_THRUST) * dt);
       } else {
+        if (fuel <= 0) thrusting = false;
         boostFactor = Math.max(0, boostFactor - dt * 3.5);
       }
-      if (keys.KeyS) velocity.addScaledVector(forward, -THRUST * 0.5 * dt);
+      if (keys.KeyS && fuel > 0) {
+        velocity.addScaledVector(forward, -THRUST * 0.5 * dt);
+        fuel = Math.max(0, fuel - FUEL_DRAIN_THRUST * 0.4 * dt);
+      }
       if (keys.Space) velocity.multiplyScalar(Math.pow(0.04, dt));
 
       const maxV = boosting && thrusting ? BOOST_MAX : MAX_SPEED;
@@ -3754,7 +3859,15 @@ const ckVelBar = document.getElementById('ck-vel-bar');
 const ckAltBar = document.getElementById('ck-alt-bar');
 let flashTimer = 0;
 
+const fuelFillEl = document.getElementById('fuel-fill');
+const fuelValueEl = document.getElementById('fuel-value');
 function updateHUD(boostingActive) {
+  // Fuel HUD
+  const fuelPct = Math.round(fuel * 100);
+  fuelFillEl.style.width = fuelPct + '%';
+  fuelValueEl.textContent = fuelPct + '%';
+  fuelFillEl.classList.toggle('low', fuelPct < 25 && fuelPct > 0);
+  fuelFillEl.classList.toggle('empty', fuelPct === 0);
   coordsEl.textContent =
     `X ${ship.position.x.toFixed(0)}  Y ${ship.position.y.toFixed(0)}  Z ${ship.position.z.toFixed(0)}`;
   speedValEl.textContent = `${currentSpeed.toFixed(1)} u/s`;
