@@ -208,7 +208,8 @@
   /* === Intro === */
   #intro {
     position: fixed; inset: 0;
-    background: radial-gradient(ellipse at center, rgba(40, 10, 60, 0.92), rgba(0, 0, 0, 0.98));
+    background: linear-gradient(180deg, #08111f 0%, #04070d 58%, #000 100%);
+    box-shadow: inset 0 0 180px rgba(92, 132, 220, 0.14);
     z-index: 100;
     display: flex; flex-direction: column; align-items: center; justify-content: center;
     text-align: center; cursor: pointer; transition: opacity 0.6s;
@@ -559,7 +560,7 @@
   </div>
 </div>
 
-<div id="camera-mode">CHASE<small>RIGHT-CLICK TO CYCLE</small></div>
+<div id="camera-mode"><span id="camera-mode-label">CHASE</span><small>RIGHT-CLICK TO CYCLE</small></div>
 
 <!-- Cockpit interior frame -->
 <div id="cockpit-frame">
@@ -761,7 +762,7 @@ float fbm(vec3 p) {
 `;
 
 // =============================================================
-// NEBULA SKYBOX — vivid multi-color
+// DEEP SPACE SKYBOX — realistic, low-saturation background
 // =============================================================
 const skyUniforms = { time: { value: 0 } };
 const sky = new THREE.Mesh(
@@ -781,33 +782,32 @@ const sky = new THREE.Mesh(
       ${NOISE_GLSL}
       void main() {
         vec3 d = normalize(vDir);
-        vec3 color = vec3(0.005, 0.005, 0.025);
+        vec3 color = vec3(0.0013, 0.0020, 0.0065);
 
-        float n1 = fbm(d * 2.5);
-        float n2 = fbm(d * 4.0 + vec3(50.0));
-        float n3 = fbm(d * 7.0 + vec3(120.0));
-        float n4 = fbm(d * 3.5 + vec3(200.0));
-        float n5 = fbm(d * 5.5 + vec3(330.0));
-        float n6 = fbm(d * 4.5 + vec3(450.0));
+        float galAxis = abs(dot(d, normalize(vec3(0.18, 0.91, -0.33))));
+        float galBand = pow(max(0.0, 1.0 - galAxis * 2.2), 3.2);
+        float dust = fbm(d * 3.5 + vec3(8.0, time * 0.01, 20.0));
+        vec3 dustTint = mix(vec3(0.018, 0.022, 0.038), vec3(0.08, 0.09, 0.12), dust);
+        color += dustTint * galBand * 0.22;
+        color += vec3(0.04, 0.05, 0.07) * galBand * 0.08;
 
-        vec3 purple = vec3(0.55, 0.10, 0.80) * smoothstep(0.00, 0.50, n1);
-        vec3 blue   = vec3(0.10, 0.30, 0.90) * smoothstep(0.10, 0.55, n2);
-        vec3 pink   = vec3(0.90, 0.15, 0.55) * smoothstep(0.25, 0.70, n3);
-        vec3 green  = vec3(0.18, 0.85, 0.40) * smoothstep(0.30, 0.70, n4);
-        vec3 cyan   = vec3(0.10, 0.70, 1.00) * smoothstep(0.25, 0.65, n5);
-        vec3 amber  = vec3(1.00, 0.55, 0.18) * smoothstep(0.35, 0.70, n6);
+        float starSeed = fract(sin(dot(d * 2100.0, vec3(127.1, 311.7, 74.7))) * 43758.5453);
+        float starCore = pow(starSeed, 92.0);
+        float starHalo = pow(starSeed, 34.0) * 0.08;
+        float twinkle = 0.96 + 0.04 * sin(time * 0.03 + starSeed * 6.2831);
+        vec3 starTint = mix(
+          vec3(0.90, 0.95, 1.0),
+          vec3(1.0, 0.93, 0.82),
+          smoothstep(0.4, 0.95, fract(starSeed * 17.0))
+        );
+        color += starTint * starCore * twinkle * 1.3;
+        color += vec3(1.0) * starHalo * 0.18;
 
-        color += purple * 0.55;
-        color += blue   * 0.45;
-        color += pink   * 0.40;
-        color += green  * 0.30;
-        color += cyan   * 0.35;
-        color += amber  * 0.22;
+        float sparse = pow(fract(sin(dot(d * 780.0, vec3(12.9898, 78.233, 45.164))) * 43758.5453), 250.0);
+        color += vec3(1.0, 0.97, 0.92) * sparse * 0.35;
 
-        // Distant sparkle
-        float spark = pow(fract(sin(dot(d * 1200.0, vec3(12.9898, 78.233, 45.164))) * 43758.5453), 200.0);
-        color += vec3(spark * 0.5);
-
+        float limb = smoothstep(0.0, 0.18, abs(d.y));
+        color += vec3(0.003, 0.004, 0.008) * limb;
         gl_FragColor = vec4(color, 1.0);
       }
     `,
@@ -819,9 +819,9 @@ scene.add(sky);
 
 // Bright morning atmosphere shown during launch. Space is hidden until the end of ascent.
 const morningSkyUniforms = {
-  topColor: { value: new THREE.Color(0x62b8ff) },
-  horizonColor: { value: new THREE.Color(0xffd494) },
-  groundColor: { value: new THREE.Color(0xcfefff) },
+  topColor: { value: new THREE.Color(0x4c8fe0) },
+  horizonColor: { value: new THREE.Color(0xf9b47b) },
+  groundColor: { value: new THREE.Color(0xc9dced) },
   intensity: { value: 1.0 }
 };
 const morningSky = new THREE.Mesh(
@@ -843,8 +843,9 @@ const morningSky = new THREE.Mesh(
       uniform float intensity;
       void main() {
         float h = clamp(vDir.y * 0.5 + 0.5, 0.0, 1.0);
-        vec3 sky = mix(horizonColor, topColor, smoothstep(0.38, 1.0, h));
-        sky = mix(groundColor, sky, smoothstep(0.18, 0.55, h));
+        vec3 sky = mix(horizonColor, topColor, smoothstep(0.28, 1.0, h));
+        sky = mix(groundColor, sky, smoothstep(0.08, 0.58, h));
+        sky += vec3(0.08, 0.05, 0.03) * pow(1.0 - h, 4.0);
         gl_FragColor = vec4(sky * intensity, 1.0);
       }
     `,
@@ -871,13 +872,12 @@ function createStarfield(count, radius) {
     positions[i*3+1] = r * Math.sin(phi) * Math.sin(theta);
     positions[i*3+2] = r * Math.cos(phi);
     const t = Math.random();
-    if (t < 0.5)       { colors[i*3]=1;    colors[i*3+1]=1;    colors[i*3+2]=1; }
-    else if (t < 0.7)  { colors[i*3]=0.55; colors[i*3+1]=0.75; colors[i*3+2]=1; }
-    else if (t < 0.82) { colors[i*3]=1;    colors[i*3+1]=0.85; colors[i*3+2]=0.55; }
-    else if (t < 0.9)  { colors[i*3]=1;    colors[i*3+1]=0.5;  colors[i*3+2]=0.4; }
-    else if (t < 0.96) { colors[i*3]=0.55; colors[i*3+1]=1;    colors[i*3+2]=0.7; }
-    else               { colors[i*3]=1;    colors[i*3+1]=0.4;  colors[i*3+2]=1; }
-    sizes[i] = Math.pow(Math.random(), 3) * 7 + 1;
+    if (t < 0.58)       { colors[i*3]=0.95; colors[i*3+1]=0.97; colors[i*3+2]=1.0; }
+    else if (t < 0.74)  { colors[i*3]=0.82; colors[i*3+1]=0.90; colors[i*3+2]=1.0; }
+    else if (t < 0.87)  { colors[i*3]=1.0;  colors[i*3+1]=0.96; colors[i*3+2]=0.84; }
+    else if (t < 0.95)  { colors[i*3]=1.0;  colors[i*3+1]=0.86; colors[i*3+2]=0.66; }
+    else                { colors[i*3]=1.0;  colors[i*3+1]=0.74; colors[i*3+2]=0.62; }
+    sizes[i] = Math.pow(Math.random(), 2.8) * 5.5 + 0.8;
   }
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
@@ -3126,7 +3126,7 @@ window.addEventListener('keydown', e => {
       if (awayDir.lengthSq() < 0.01) awayDir.set(1, 0, 0);
       ship.position.copy(iss.position).addScaledVector(awayDir, 150);
       issDocked = false; // allow re-docking later
-      cameraModeEl.firstChild.textContent = 'EXITED ISS';
+      cameraModeLabel.textContent = 'EXITED ISS';
       cameraModeEl.classList.add('show');
       clearTimeout(updateCameraModeUI._t);
       updateCameraModeUI._t = setTimeout(() => cameraModeEl.classList.remove('show'), 2200);
@@ -3137,7 +3137,7 @@ window.addEventListener('keydown', e => {
         walkPos.set(0, 0.3, 0.5);
         walkYaw = 0;
         walkPitch = 0;
-        cameraModeEl.firstChild.textContent = 'WALKING INSIDE SHIP';
+        cameraModeLabel.textContent = 'WALKING INSIDE SHIP';
         cameraModeEl.classList.add('show');
         clearTimeout(updateCameraModeUI._t);
         updateCameraModeUI._t = setTimeout(() => cameraModeEl.classList.remove('show'), 2200);
@@ -3196,6 +3196,7 @@ const ignitionOverlay = document.getElementById('ignition-overlay');
 const countdownEl = document.getElementById('countdown');
 const launchStatusEl = document.getElementById('launch-status');
 const cameraModeEl = document.getElementById('camera-mode');
+const cameraModeLabel = document.getElementById('camera-mode-label');
 const cockpitFrame = document.getElementById('cockpit-frame');
 const phaseHud = document.getElementById('phase-hud');
 const phaseTimeEl = document.getElementById('phase-time');
@@ -3275,7 +3276,7 @@ let cameraMode = 0; // 0=chase, 1=orbit, 2=cockpit
 const cameraModeNames = ['CHASE', 'CINEMATIC ORBIT', 'COCKPIT'];
 
 function updateCameraModeUI() {
-  cameraModeEl.firstChild.textContent = cameraModeNames[cameraMode];
+  cameraModeLabel.textContent = cameraModeNames[cameraMode];
   cameraModeEl.classList.add('show');
   if (cameraMode === 2) cockpitFrame.classList.add('active');
   else cockpitFrame.classList.remove('active');
