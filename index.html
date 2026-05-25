@@ -1426,7 +1426,20 @@ function buildISS() {
 
 const iss = buildISS();
 scene.add(iss);
+const discoveryShip = buildDiscoveryShip();
+const artemisShip = buildArtemisShip();
+scene.add(discoveryShip);
+scene.add(artemisShip);
 let issAngle = Math.random() * Math.PI * 2;
+let discoveryAngle = Math.random() * Math.PI * 2;
+let artemisAngle = Math.random() * Math.PI * 2;
+discoveryShip.position.copy(LAUNCH_EARTH_POS).add(new THREE.Vector3(82, 18, 20));
+artemisShip.position.copy(LAUNCH_EARTH_POS).add(new THREE.Vector3(140, 34, -25));
+const spacecraftContacts = [
+  { name: 'DISCOVERY', group: discoveryShip, radius: 30, discovered: false, announce: 'SPACE SHUTTLE DISCOVERY' },
+  { name: 'ARTEMIS', group: artemisShip, radius: 26, discovered: false, announce: 'ARTEMIS ORION' }
+];
+let launchStatusTimer = 0;
 
 // === ISS INTERIOR (walk inside when docked) ===
 function buildISSInterior() {
@@ -1691,6 +1704,45 @@ function makeHullTexture() {
   tex.wrapS = THREE.RepeatWrapping;
   tex.wrapT = THREE.RepeatWrapping;
   return tex;
+}
+
+function makeNamePlate(text, accent = '#6df') {
+  const c = document.createElement('canvas');
+  c.width = 512;
+  c.height = 128;
+  const x = c.getContext('2d');
+  x.clearRect(0, 0, c.width, c.height);
+  const fill = x.createLinearGradient(0, 0, c.width, 0);
+  fill.addColorStop(0.0, 'rgba(0, 0, 0, 0)');
+  fill.addColorStop(0.12, 'rgba(0, 0, 0, 0.65)');
+  fill.addColorStop(0.5, 'rgba(0, 0, 0, 0.8)');
+  fill.addColorStop(0.88, 'rgba(0, 0, 0, 0.65)');
+  fill.addColorStop(1.0, 'rgba(0, 0, 0, 0)');
+  x.fillStyle = fill;
+  x.fillRect(0, 30, c.width, 68);
+  x.strokeStyle = accent;
+  x.lineWidth = 4;
+  x.strokeRect(56, 36, c.width - 112, 56);
+  x.fillStyle = '#fff';
+  x.font = 'bold 30px Courier New';
+  x.textAlign = 'center';
+  x.textBaseline = 'middle';
+  x.fillText(text, c.width / 2, c.height / 2 + 2);
+  x.fillStyle = accent;
+  x.fillRect(88, 52, 48, 5);
+  x.fillRect(c.width - 136, 52, 48, 5);
+
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.needsUpdate = true;
+
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: tex,
+    transparent: true,
+    depthWrite: false
+  }));
+  sprite.scale.set(12, 3, 1);
+  return sprite;
 }
 
 const tankTex = makeTankTexture();
@@ -2088,6 +2140,149 @@ function buildSolarArray() {
     }
   }
   return arr;
+}
+
+function buildDiscoveryShip() {
+  const shipGroup = new THREE.Group();
+  const bodyMat = new THREE.MeshStandardMaterial({ color: 0xf2f2f4, metalness: 0.55, roughness: 0.5 });
+  const wingMat = new THREE.MeshStandardMaterial({ color: 0xdfe3e8, metalness: 0.35, roughness: 0.6 });
+  const blackMat = new THREE.MeshStandardMaterial({ color: 0x111111, metalness: 0.2, roughness: 0.9 });
+  const panelMat = new THREE.MeshStandardMaterial({ color: 0x18396b, metalness: 0.35, roughness: 0.55 });
+  const rcsMat = new THREE.MeshStandardMaterial({ color: 0x7a7d84, metalness: 0.85, roughness: 0.35 });
+
+  const fuselage = new THREE.Mesh(new THREE.CylinderGeometry(0.82, 0.95, 10.6, 24), bodyMat);
+  fuselage.rotation.x = Math.PI / 2;
+  shipGroup.add(fuselage);
+
+  const nose = new THREE.Mesh(new THREE.ConeGeometry(0.82, 2.2, 24), bodyMat);
+  nose.rotation.x = -Math.PI / 2;
+  nose.position.z = -6.3;
+  shipGroup.add(nose);
+
+  const cockpit = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.34, 0.8), blackMat);
+  cockpit.position.set(0, 0.48, -4.9);
+  shipGroup.add(cockpit);
+
+  const payloadLeft = new THREE.Mesh(new THREE.BoxGeometry(0.06, 1.7, 4.8), panelMat);
+  payloadLeft.position.set(-0.6, 0, 0.1);
+  payloadLeft.rotation.z = 0.04;
+  shipGroup.add(payloadLeft);
+  const payloadRight = payloadLeft.clone();
+  payloadRight.position.x = 0.6;
+  payloadRight.rotation.z = -0.04;
+  shipGroup.add(payloadRight);
+
+  const wingGeo = new THREE.BoxGeometry(4.8, 0.12, 2.0);
+  const leftWing = new THREE.Mesh(wingGeo, wingMat);
+  leftWing.position.set(-0.3, -0.28, 0.15);
+  leftWing.rotation.z = 0.42;
+  shipGroup.add(leftWing);
+  const rightWing = new THREE.Mesh(wingGeo, wingMat);
+  rightWing.position.set(0.3, -0.28, 0.15);
+  rightWing.rotation.z = -0.42;
+  shipGroup.add(rightWing);
+
+  const fin = new THREE.Mesh(new THREE.BoxGeometry(0.14, 2.0, 1.4), wingMat);
+  fin.position.set(0, 1.0, 4.3);
+  fin.rotation.z = 0.1;
+  shipGroup.add(fin);
+
+  const tailCap = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.7, 1.2, 20), blackMat);
+  tailCap.rotation.x = Math.PI / 2;
+  tailCap.position.z = 5.1;
+  shipGroup.add(tailCap);
+
+  for (const side of [-1, 1]) {
+    const pod = new THREE.Mesh(new THREE.SphereGeometry(0.22, 12, 10), rcsMat);
+    pod.position.set(side * 1.35, 0.9, 4.2);
+    shipGroup.add(pod);
+    const pod2 = pod.clone();
+    pod2.position.y = -0.9;
+    shipGroup.add(pod2);
+  }
+
+  for (let i = 0; i < 4; i++) {
+    const thr = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.06, 0.3, 8), rcsMat);
+    thr.position.set((i < 2 ? -1 : 1) * 0.35, (i % 2 ? -1 : 1) * 0.35, 5.0);
+    thr.rotation.z = (i % 2 ? -1 : 1) * Math.PI / 2;
+    shipGroup.add(thr);
+  }
+
+  const navL = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 8), new THREE.MeshBasicMaterial({ color: 0x33ff66 }));
+  navL.position.set(-0.95, 0.4, -5.0);
+  shipGroup.add(navL);
+  const navR = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 8), new THREE.MeshBasicMaterial({ color: 0xff3355 }));
+  navR.position.set(0.95, 0.4, -5.0);
+  shipGroup.add(navR);
+
+  const label = makeNamePlate('DISCOVERY', '#8fd1ff');
+  label.position.set(0, 3.2, 0);
+  shipGroup.add(label);
+
+  shipGroup.add(new THREE.PointLight(0xcfefff, 0.7, 18, 1.4));
+  shipGroup.userData = { name: 'DISCOVERY' };
+  return shipGroup;
+}
+
+function buildArtemisShip() {
+  const shipGroup = new THREE.Group();
+  const capsuleMat = new THREE.MeshStandardMaterial({ color: 0xf4f4f6, metalness: 0.45, roughness: 0.52 });
+  const goldMat = new THREE.MeshStandardMaterial({ color: 0xd1b15e, metalness: 0.7, roughness: 0.32 });
+  const darkMat = new THREE.MeshStandardMaterial({ color: 0x16181c, metalness: 0.35, roughness: 0.85 });
+  const panelMat = new THREE.MeshStandardMaterial({ color: 0x234f94, metalness: 0.3, roughness: 0.55, side: THREE.DoubleSide });
+
+  const capsule = new THREE.Mesh(new THREE.CylinderGeometry(1.18, 1.34, 3.3, 24), capsuleMat);
+  capsule.rotation.x = Math.PI / 2;
+  shipGroup.add(capsule);
+
+  const nose = new THREE.Mesh(new THREE.ConeGeometry(1.18, 1.2, 24), capsuleMat);
+  nose.rotation.x = -Math.PI / 2;
+  nose.position.z = -2.35;
+  shipGroup.add(nose);
+
+  const heatShield = new THREE.Mesh(new THREE.CylinderGeometry(1.42, 1.42, 0.24, 24), darkMat);
+  heatShield.rotation.x = Math.PI / 2;
+  heatShield.position.z = 1.85;
+  shipGroup.add(heatShield);
+
+  const serviceModule = new THREE.Mesh(new THREE.CylinderGeometry(0.94, 0.94, 3.2, 24), goldMat);
+  serviceModule.rotation.x = Math.PI / 2;
+  serviceModule.position.z = 3.3;
+  shipGroup.add(serviceModule);
+
+  for (const side of [-1, 1]) {
+    const boom = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, 4.4), goldMat);
+    boom.position.set(side * 0.05, 0, 4.9);
+    boom.rotation.y = side * Math.PI / 2;
+    shipGroup.add(boom);
+
+    const panel = new THREE.Mesh(new THREE.BoxGeometry(4.6, 0.08, 1.8), panelMat);
+    panel.position.set(side * 4.0, 0, 4.9);
+    shipGroup.add(panel);
+
+    const panel2 = panel.clone();
+    panel2.position.x = side * 7.4;
+    shipGroup.add(panel2);
+  }
+
+  for (let i = 0; i < 6; i++) {
+    const rcs = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 8), new THREE.MeshBasicMaterial({ color: i % 2 ? 0x77ccff : 0xffffff }));
+    const ang = i * Math.PI / 3;
+    rcs.position.set(Math.cos(ang) * 1.05, Math.sin(ang) * 0.55, 0.8);
+    shipGroup.add(rcs);
+  }
+
+  const windowBand = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.22, 0.4), new THREE.MeshBasicMaterial({ color: 0x0c223f }));
+  windowBand.position.set(0, 0.42, -0.8);
+  shipGroup.add(windowBand);
+
+  const label = makeNamePlate('ARTEMIS', '#ffd894');
+  label.position.set(0, 3.4, 0);
+  shipGroup.add(label);
+
+  shipGroup.add(new THREE.PointLight(0xffddaa, 0.8, 18, 1.3));
+  shipGroup.userData = { name: 'ARTEMIS' };
+  return shipGroup;
 }
 
 const upperTank = buildFuelTank();
@@ -3164,6 +3359,28 @@ function animate() {
   // Orient along orbit direction
   const issForwardDir = new THREE.Vector3(-Math.sin(issAngle), 0, Math.cos(issAngle));
   iss.lookAt(iss.position.clone().add(issForwardDir));
+
+  discoveryAngle += dt * 0.18;
+  discoveryShip.position.set(
+    earthPos.x + Math.cos(discoveryAngle) * 82,
+    earthPos.y + Math.sin(discoveryAngle * 0.7) * 16,
+    earthPos.z + Math.sin(discoveryAngle) * 82
+  );
+  discoveryShip.lookAt(earthPos);
+
+  const moonWorld = new THREE.Vector3();
+  if (earthPlanet.config._moonPivot && earthPlanet.config._moonPivot.children[0]) {
+    earthPlanet.config._moonPivot.children[0].getWorldPosition(moonWorld);
+  } else {
+    moonWorld.copy(earthPos).add(new THREE.Vector3(120, 0, 0));
+  }
+  artemisAngle += dt * 0.11;
+  artemisShip.position.set(
+    moonWorld.x + Math.cos(artemisAngle) * 14,
+    moonWorld.y + Math.sin(artemisAngle * 0.8) * 4.5,
+    moonWorld.z + Math.sin(artemisAngle) * 14
+  );
+  artemisShip.lookAt(moonWorld);
   // Keep interior glued to the ISS so player walks around in it as the station orbits
   if (issInsideMode) {
     issInterior.position.copy(iss.position);
@@ -3286,6 +3503,23 @@ function animate() {
     }
   } else {
     issMarker.visible = false;
+  }
+
+  for (const contact of spacecraftContacts) {
+    const d = ship.position.distanceTo(contact.group.position);
+    if (d < contact.radius + 18 && !contact.discovered) {
+      contact.discovered = true;
+      launchStatusEl.textContent = `NEW CONTACT: ${contact.announce}`;
+      launchStatusEl.classList.add('show');
+      launchStatusTimer = 3.0;
+    }
+  }
+  if (launchStatusTimer > 0) {
+    launchStatusTimer -= dt;
+    if (launchStatusTimer <= 0) {
+      launchStatusEl.classList.remove('show');
+      launchStatusEl.textContent = '';
+    }
   }
 
   // Atmospheric drag near Earth — slows ship for re-entry/landing
@@ -3425,10 +3659,20 @@ function animate() {
     phaseTimeEl.textContent = formatMissionTime(mt);
     phaseNameEl.textContent = phaseLabel;
 
-    // Heat shield event disabled — it was triggering mid-launch where it doesn't belong
-    heatPromptVisible = false;
-    heatAlert.classList.remove('show', 'armed', 'safe');
-    if (false) { // disabled
+    const heatLead = mt > HEAT_EVENT_TIME - 5.0 && mt < HEAT_EVENT_TIME + 3.0 && !heatShieldFailed;
+    const heatArmed = Math.abs(mt - HEAT_EVENT_TIME) <= HEAT_EVENT_WINDOW && !heatShieldClicked && !heatShieldFailed;
+    heatPromptVisible = heatLead && !heatShieldClicked;
+    heatAlert.classList.toggle('show', heatLead || (heatShieldClicked && mt < HEAT_EVENT_TIME + 6));
+    heatAlert.classList.toggle('armed', heatArmed);
+    heatAlert.classList.toggle('safe', heatShieldClicked);
+    if (heatShieldClicked) {
+      heatCopy.textContent = 'HEAT SHIELD LOCKED';
+    } else if (heatArmed) {
+      heatCopy.textContent = 'CLICK HOT NOW';
+    } else if (heatLead) {
+      heatCopy.textContent = `HEAT SHIELD STANDBY  ${Math.max(0, HEAT_EVENT_TIME - mt).toFixed(1)}`;
+    }
+    if (mt > HEAT_EVENT_TIME + HEAT_EVENT_WINDOW && !heatShieldClicked && !heatShieldFailed) {
       heatShieldFailed = true;
       explodeShip('ATMOSPHERIC BURN-UP', 'You missed the HOT command and the shield failed in peak heating.');
       return;
@@ -3740,9 +3984,11 @@ function animate() {
   const forwardVec = new THREE.Vector3(0, 0, -1).applyQuaternion(ship.quaternion);
 
   // Engine glow modulation — realistic yellow-white flame colors
-  const baseGlow = boostFactor * (boosting ? 1.0 : 0.85) + ignitionPulse * 0.5;
+  // KILL engine flames if out of fuel during play (no thrust = no fire)
+  const fuelEmpty = (gamePhase === 'play' && fuel <= 0);
+  const baseGlow = fuelEmpty ? 0 : (boostFactor * (boosting ? 1.0 : 0.85) + ignitionPulse * 0.5);
   const glowOpacity = Math.min(1.4, baseGlow * 1.3);
-  const plumeStretch = 0.5 + boostFactor * 6.0 + ignitionPulse * 3.5;
+  const plumeStretch = fuelEmpty ? 0.01 : (0.5 + boostFactor * 6.0 + ignitionPulse * 3.5);
   // White-hot center inside the bell, orange plume outside (matches real rocket exhaust)
   const eColor = new THREE.Color(0xfff0c0); // bright white-yellow at engine throat
   const ePlumeColor = boosting || autoLaunch
@@ -3788,8 +4034,8 @@ function animate() {
   const shipInAtmo = shipAltAbove < 70;
   // Smoke billows during entire in-atmosphere ascent
   const isHeavyLaunch = isLaunch && mtPart < 25 && shipInAtmo;
-  const spawnRate = isHeavyLaunch ? 1.8 :
-                    (boostFactor * (boosting ? 1.1 : 0.65) + (ignitionPulse > 0.3 ? 0.7 : 0));
+  const spawnRate = fuelEmpty ? 0 : (isHeavyLaunch ? 1.8 :
+                    (boostFactor * (boosting ? 1.1 : 0.65) + (ignitionPulse > 0.3 ? 0.7 : 0)));
 
   for (let i = 0; i < PCOUNT; i++) {
     if (pLife[i] <= 0 && Math.random() < spawnRate) {
@@ -4083,7 +4329,7 @@ function animate() {
   sky.visible = !inAtmosphere;
   groundPlane.visible = camAtmoAlt < 500; // hide ground far out in space
 
-  updateHUD(boosting && thrusting);
+  updateHUD(boosting && thrusting, dt);
   composer.render();
   requestAnimationFrame(animate);
 }
@@ -4107,7 +4353,7 @@ let flashTimer = 0;
 
 const fuelFillEl = document.getElementById('fuel-fill');
 const fuelValueEl = document.getElementById('fuel-value');
-function updateHUD(boostingActive) {
+function updateHUD(boostingActive, dt) {
   // Fuel HUD
   const fuelPct = Math.round(fuel * 100);
   fuelFillEl.style.width = fuelPct + '%';
@@ -4155,12 +4401,18 @@ function updateHUD(boostingActive) {
       flashTimer = 3.0;
     }
   }
-  discoveredEl.innerHTML = planets.map(p =>
-    `<div class="${p.discovered ? 'discovered' : 'undiscovered'}">${p.discovered ? '✓' : '○'} ${p.config.name}</div>`
-  ).join('');
+  const craftHeader = '<div style="margin-top:6px;opacity:0.65;letter-spacing:2px;">CRAFT</div>';
+  discoveredEl.innerHTML =
+    planets.map(p =>
+      `<div class="${p.discovered ? 'discovered' : 'undiscovered'}">${p.discovered ? '✓' : '○'} ${p.config.name}</div>`
+    ).join('') +
+    craftHeader +
+    spacecraftContacts.map(c =>
+      `<div class="${c.discovered ? 'discovered' : 'undiscovered'}">${c.discovered ? '✓' : '○'} ${c.name}</div>`
+    ).join('');
   if (planets.every(p => p.discovered)) victoryEl.classList.add('show');
   if (flashTimer > 0) {
-    flashTimer -= 0.016;
+    flashTimer -= dt;
     if (flashTimer <= 0) flash.classList.remove('show');
   }
 }
