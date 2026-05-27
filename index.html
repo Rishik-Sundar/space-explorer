@@ -3215,6 +3215,7 @@ const hotBtn = document.getElementById('hot-btn');
 let introVisible = true;
 let issDocked = false;
 let dockingTimer = 0;
+let flashTimer = 0;
 
 hotBtn.addEventListener('click', e => {
   e.stopPropagation();
@@ -3229,10 +3230,42 @@ function beginLaunchSequence(lockPointer = true) {
   if (lockPointer) canvas.requestPointerLock();
   gamePhase = 'launch';
   launchTimer = 0;
+  launchStatusTimer = 0;
+  flashTimer = 0;
+  dockingTimer = 0;
   heatShieldClicked = false;
   heatShieldFailed = false;
   heatPromptVisible = false;
+  issDocked = false;
+  issInsideMode = false;
+  walkMode = false;
+  landed = false;
+  landingTimer = 0;
+  boostersSeparated = false;
+  cameraMode = 0;
+  updateCameraModeUI();
+  launchStatusEl.textContent = '';
+  launchStatusEl.classList.remove('show');
+  flashName.textContent = '';
+  flash.classList.remove('show');
+  dockingMsg.classList.remove('show');
   heatAlert.classList.remove('show', 'armed', 'safe');
+  heatCopy.textContent = 'ATMOSPHERIC HEAT RISING';
+  countdownEl.className = '';
+  countdownEl.textContent = '';
+  ignitionOverlay.classList.remove('show');
+  cockpitFrame.classList.remove('active');
+  wasThrustingLast = false;
+  ignitionPulse = 0;
+  shakeAmount = 0;
+  strobeTimer = 0;
+  boostFactor = 0;
+  currentSpeed = 0;
+  stress = 0;
+  fuel = 1.0;
+  velocity.set(0, 0, 0);
+  if (issInterior) issInterior.visible = false;
+  if (interior) interior.visible = false;
   // Show launch HUDs
   phaseHud.classList.add('show');
   attitudeHud.classList.add('show');
@@ -4350,7 +4383,6 @@ const ckAlt = document.getElementById('ck-alt');
 const ckVel = document.getElementById('ck-vel');
 const ckVelBar = document.getElementById('ck-vel-bar');
 const ckAltBar = document.getElementById('ck-alt-bar');
-let flashTimer = 0;
 
 const fuelFillEl = document.getElementById('fuel-fill');
 const fuelValueEl = document.getElementById('fuel-value');
