@@ -2703,178 +2703,403 @@ function buildSRB(side) {
 
 function buildDiscovery() {
   clearShipModel();
-  // Orange external tank (huge cylinder, tapered top)
-  const tankLen = 13;
+  // === Orange External Tank (Shuttle ET — accurate foam-color, intertank band, ogive nose) ===
+  const tankLen = 14;
   const tankRad = 1.4;
-  const tankMat = new THREE.MeshStandardMaterial({ color: 0xc46430, metalness: 0.3, roughness: 0.75 });
-  const tank = new THREE.Mesh(new THREE.CylinderGeometry(tankRad, tankRad, tankLen, 32), tankMat);
-  tank.rotation.x = Math.PI / 2;
-  ship.add(tank);
-  // Top dome (smaller cone)
-  const tankTop = new THREE.Mesh(new THREE.ConeGeometry(tankRad, 2, 24), tankMat);
-  tankTop.rotation.x = -Math.PI / 2;
-  tankTop.position.z = -tankLen / 2 - 1;
-  ship.add(tankTop);
-  // Tank bottom slight dome
-  const tankBot = new THREE.Mesh(new THREE.SphereGeometry(tankRad, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2), tankMat);
-  tankBot.rotation.x = Math.PI / 2;
-  tankBot.position.z = tankLen / 2;
-  ship.add(tankBot);
-  // Connection band (white) on tank
-  for (const bz of [-2, 2]) {
-    const band = new THREE.Mesh(
-      new THREE.CylinderGeometry(tankRad * 1.01, tankRad * 1.01, 0.4, 32),
-      new THREE.MeshStandardMaterial({ color: 0xe8e6e0, metalness: 0.4, roughness: 0.5 })
+  const tankColor = 0xb55a28; // burnt orange foam
+  const tankMat = new THREE.MeshStandardMaterial({ color: tankColor, metalness: 0.15, roughness: 0.85 });
+
+  // LH2 tank (lower, larger portion)
+  const lh2 = new THREE.Mesh(new THREE.CylinderGeometry(tankRad, tankRad, tankLen * 0.6, 36), tankMat);
+  lh2.rotation.x = Math.PI / 2;
+  lh2.position.z = tankLen * 0.05;
+  ship.add(lh2);
+
+  // Intertank — slightly lighter, has stringer panels
+  const intertank = new THREE.Mesh(
+    new THREE.CylinderGeometry(tankRad * 1.01, tankRad * 1.01, 1.4, 36),
+    new THREE.MeshStandardMaterial({ color: 0xc8804a, metalness: 0.2, roughness: 0.75 })
+  );
+  intertank.rotation.x = Math.PI / 2;
+  intertank.position.z = -tankLen * 0.25 - 0.7;
+  ship.add(intertank);
+  // Vertical stringers on intertank
+  for (let i = 0; i < 16; i++) {
+    const ang = (i / 16) * Math.PI * 2;
+    const stringer = new THREE.Mesh(
+      new THREE.BoxGeometry(0.04, 1.4, 0.04),
+      new THREE.MeshStandardMaterial({ color: 0x6a3818, metalness: 0.4, roughness: 0.6 })
     );
-    band.rotation.x = Math.PI / 2;
-    band.position.z = bz;
-    ship.add(band);
+    stringer.position.set(Math.cos(ang) * tankRad * 1.02, Math.sin(ang) * tankRad * 1.02, 0);
+    stringer.rotation.z = -ang;
+    intertank.add(stringer);
   }
 
-  // SRBs (left and right)
+  // LOX tank (upper, smaller, ogive cap)
+  const lox = new THREE.Mesh(
+    new THREE.CylinderGeometry(tankRad, tankRad, tankLen * 0.35, 36),
+    tankMat
+  );
+  lox.rotation.x = Math.PI / 2;
+  lox.position.z = -tankLen * 0.45 - 0.5;
+  ship.add(lox);
+
+  // Ogive top
+  const tankTop = new THREE.Mesh(
+    new THREE.SphereGeometry(tankRad, 24, 16, 0, Math.PI * 2, 0, Math.PI * 0.45),
+    tankMat
+  );
+  tankTop.rotation.x = Math.PI / 2;
+  tankTop.scale.z = 1.4;
+  tankTop.position.z = -tankLen * 0.62 - 0.5;
+  ship.add(tankTop);
+  // Tip cap
+  const tankTip = new THREE.Mesh(
+    new THREE.ConeGeometry(0.18, 0.5, 12),
+    new THREE.MeshStandardMaterial({ color: 0x808890, metalness: 0.6, roughness: 0.4 })
+  );
+  tankTip.rotation.x = -Math.PI / 2;
+  tankTip.position.z = -tankLen * 0.62 - 1.5 - 0.25;
+  ship.add(tankTip);
+
+  // Tank bottom dome
+  const tankBot = new THREE.Mesh(
+    new THREE.SphereGeometry(tankRad, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2),
+    tankMat
+  );
+  tankBot.rotation.x = Math.PI / 2;
+  tankBot.position.z = tankLen * 0.35;
+  ship.add(tankBot);
+
+  // === SRBs (Solid Rocket Boosters) ===
   leftBooster = buildSRB(1);
   leftBooster.position.set(tankRad + 1.0, 0, 0.5);
   ship.add(leftBooster);
+  engineGlows.push(leftBooster.userData.glowDisc);
+  enginePlumes.push(leftBooster.userData.plume);
+  enginePositionsLocal.push(leftBooster.userData.exhaustPos.clone().add(leftBooster.position));
+
   rightBooster = buildSRB(-1);
   rightBooster.position.set(-(tankRad + 1.0), 0, 0.5);
   ship.add(rightBooster);
+  engineGlows.push(rightBooster.userData.glowDisc);
+  enginePlumes.push(rightBooster.userData.plume);
+  enginePositionsLocal.push(rightBooster.userData.exhaustPos.clone().add(rightBooster.position));
 
-  // Orbiter (the shuttle) — attached to the side of the tank
+  // === Orbiter (Discovery) — strapped to belly of tank, nose UP with ET ===
   const orbiter = new THREE.Group();
-  // Fuselage
+  // Fuselage — white with black underbelly
   const fuse = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.55, 0.7, 6, 16),
-    new THREE.MeshStandardMaterial({ color: 0xe8e8ec, metalness: 0.4, roughness: 0.55 })
+    new THREE.CylinderGeometry(0.65, 0.78, 6.5, 20),
+    new THREE.MeshStandardMaterial({ color: 0xeceef0, metalness: 0.35, roughness: 0.55 })
   );
   fuse.rotation.x = Math.PI / 2;
   orbiter.add(fuse);
-  // Black tile underbelly (half cylinder darker)
+  // Black underbelly — half cylinder, on the side facing the tank (oriented after rotation)
   const belly = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.56, 0.72, 5.8, 16, 1, false, -Math.PI / 2, Math.PI),
-    new THREE.MeshStandardMaterial({ color: 0x202428, metalness: 0.3, roughness: 0.8 })
+    new THREE.CylinderGeometry(0.66, 0.79, 6.4, 20, 1, false, 0, Math.PI),
+    new THREE.MeshStandardMaterial({ color: 0x1a1e22, metalness: 0.2, roughness: 0.85 })
   );
   belly.rotation.x = Math.PI / 2;
   orbiter.add(belly);
-  // Nose
+  // Black nose cap
   const orbNose = new THREE.Mesh(
-    new THREE.ConeGeometry(0.55, 1.2, 16),
-    new THREE.MeshStandardMaterial({ color: 0x202428, metalness: 0.3, roughness: 0.8 })
+    new THREE.SphereGeometry(0.65, 16, 12, 0, Math.PI * 2, 0, Math.PI / 2),
+    new THREE.MeshStandardMaterial({ color: 0x1a1e22, metalness: 0.2, roughness: 0.85 })
   );
   orbNose.rotation.x = -Math.PI / 2;
-  orbNose.position.z = -3.6;
+  orbNose.position.z = -3.25;
   orbiter.add(orbNose);
-  // Delta wings
+  orbNose.scale.z = 1.4;
+  // Cockpit windows (forward of nose)
+  for (let i = 0; i < 3; i++) {
+    const win = new THREE.Mesh(
+      new THREE.BoxGeometry(0.18, 0.10, 0.04),
+      new THREE.MeshBasicMaterial({ color: 0x6abedc })
+    );
+    win.position.set(-0.3 + i * 0.3, 0.42, -2.7);
+    win.rotation.x = -0.3;
+    orbiter.add(win);
+  }
+  // Delta wings — swept back
   const wingShape = new THREE.Shape();
-  wingShape.moveTo(0, 0); wingShape.lineTo(2.6, -0.4); wingShape.lineTo(2.6, -1.1); wingShape.lineTo(0.4, -1.4); wingShape.closePath();
-  const wingGeo = new THREE.ExtrudeGeometry(wingShape, { depth: 0.12, bevelEnabled: false });
-  wingGeo.translate(0, 0, -0.06);
+  wingShape.moveTo(0, 0);
+  wingShape.lineTo(3.0, -0.6);
+  wingShape.lineTo(3.0, -1.3);
+  wingShape.lineTo(0.6, -1.6);
+  wingShape.closePath();
+  const wingGeo = new THREE.ExtrudeGeometry(wingShape, { depth: 0.14, bevelEnabled: false });
+  wingGeo.translate(0, 0, -0.07);
   for (const side of [1, -1]) {
-    const wing = new THREE.Mesh(wingGeo, new THREE.MeshStandardMaterial({ color: 0xe0e0e4, metalness: 0.4, roughness: 0.55 }));
+    const wing = new THREE.Mesh(wingGeo, new THREE.MeshStandardMaterial({
+      color: 0xeceef0, metalness: 0.35, roughness: 0.55
+    }));
     wing.rotation.x = Math.PI / 2;
     wing.scale.x = side;
-    wing.position.set(side * 0.5, -0.35, 1.2);
+    wing.position.set(side * 0.6, -0.4, 1.4);
     orbiter.add(wing);
+    // Black leading edge
+    const lead = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.05, 0.05, 3.0, 8),
+      new THREE.MeshStandardMaterial({ color: 0x1a1e22, metalness: 0.4, roughness: 0.7 })
+    );
+    lead.rotation.z = Math.PI / 2;
+    lead.position.set(side * 2.0, -0.4, 1.4);
+    lead.rotation.y = side * 0.2;
+    orbiter.add(lead);
   }
-  // Tail (vertical stabilizer)
-  const tailGeo = new THREE.BoxGeometry(0.1, 1.2, 0.9);
-  const tail = new THREE.Mesh(tailGeo, new THREE.MeshStandardMaterial({ color: 0xe8e8ec, metalness: 0.4, roughness: 0.55 }));
-  tail.position.set(0, 0.95, 2.3);
+  // Vertical stabilizer (tail) — trapezoidal, tall
+  const tailShape = new THREE.Shape();
+  tailShape.moveTo(0, 0); tailShape.lineTo(1.6, 0); tailShape.lineTo(1.2, 1.6); tailShape.lineTo(0.2, 1.6); tailShape.closePath();
+  const tailGeo = new THREE.ExtrudeGeometry(tailShape, { depth: 0.1, bevelEnabled: false });
+  const tail = new THREE.Mesh(tailGeo, new THREE.MeshStandardMaterial({ color: 0xeceef0, metalness: 0.35, roughness: 0.55 }));
+  tail.position.set(-0.05, 0.4, 1.5);
+  tail.rotation.y = Math.PI / 2;
   orbiter.add(tail);
-  // 3 main engines at rear of orbiter
-  const orbEngines = makeEngineCluster(0, 0, 2.8, 3, 0.32, 1.0);
+  // OMS pods at rear (two bumps)
+  for (const side of [-1, 1]) {
+    const oms = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.18, 0.25, 1.2, 16),
+      new THREE.MeshStandardMaterial({ color: 0xeceef0, metalness: 0.4, roughness: 0.5 })
+    );
+    oms.rotation.x = Math.PI / 2;
+    oms.position.set(side * 0.5, 0.4, 2.8);
+    orbiter.add(oms);
+  }
+  // 3 SSME main engines at rear (clustered triangle)
+  const orbEngines = makeEngineCluster(0, 0, 3.2, 3, 0.34, 1.1);
   orbiter.add(orbEngines);
-  // Place orbiter attached to side of tank
-  orbiter.position.set(tankRad + 0.4, 0, 0.5);
-  orbiter.rotation.y = -Math.PI / 2; // facing forward
+
+  // Position orbiter beside tank, with black belly facing tank (toward -X)
+  // Orbiter geometry: belly is on -Y side. Rotate around Z so -Y points toward -X (tank).
+  orbiter.position.set(tankRad + 0.85, 0, 0.6);
+  orbiter.rotation.z = -Math.PI / 2;
   ship.add(orbiter);
 
-  // Cockpit windows on orbiter (small)
-  for (let i = 0; i < 2; i++) {
-    const win = new THREE.Mesh(
-      new THREE.BoxGeometry(0.08, 0.18, 0.05),
-      new THREE.MeshBasicMaterial({ color: 0xbbeeff })
+  // Forward attach struts (two short bars from orbiter to tank)
+  for (const sz of [-1.5, 1.8]) {
+    const strut = new THREE.Mesh(
+      new THREE.BoxGeometry(1.0, 0.12, 0.12),
+      new THREE.MeshStandardMaterial({ color: 0x808890, metalness: 0.7, roughness: 0.5 })
     );
-    win.position.set(tankRad + 0.4 + 0.5, 0.25, -2.7 + i * 0.2);
-    ship.add(win);
+    strut.position.set(tankRad + 0.4, 0, sz);
+    ship.add(strut);
   }
 }
 
 function buildArtemis() {
   clearShipModel();
-  // Core stage — tall white cylinder
-  const coreLen = 14;
-  const coreRad = 1.3;
-  const coreMat = new THREE.MeshStandardMaterial({ color: 0xc46430, metalness: 0.3, roughness: 0.7 });
-  const core = new THREE.Mesh(new THREE.CylinderGeometry(coreRad, coreRad, coreLen, 32), coreMat);
+  // === SLS Core Stage — burnt orange foam-insulated ===
+  const coreLen = 15;
+  const coreRad = 1.35;
+  const coreColor = 0xb55a28;
+  const coreMat = new THREE.MeshStandardMaterial({ color: coreColor, metalness: 0.15, roughness: 0.85 });
+  const core = new THREE.Mesh(new THREE.CylinderGeometry(coreRad, coreRad, coreLen, 36), coreMat);
   core.rotation.x = Math.PI / 2;
   ship.add(core);
-  // Bands on core
-  for (let i = 0; i < 5; i++) {
-    const band = new THREE.Mesh(
-      new THREE.CylinderGeometry(coreRad * 1.01, coreRad * 1.01, 0.18, 32),
-      new THREE.MeshStandardMaterial({ color: 0xe8e6e0, metalness: 0.5, roughness: 0.5 })
-    );
-    band.rotation.x = Math.PI / 2;
-    band.position.z = -coreLen / 2 + (i + 1) * coreLen / 6;
-    ship.add(band);
+  // Top dome (LOX tank cap)
+  const coreTop = new THREE.Mesh(
+    new THREE.SphereGeometry(coreRad, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2),
+    coreMat
+  );
+  coreTop.rotation.x = -Math.PI / 2;
+  coreTop.position.z = -coreLen / 2;
+  ship.add(coreTop);
+  // Bottom engine section (boattail)
+  const boattail = new THREE.Mesh(
+    new THREE.CylinderGeometry(coreRad * 0.95, coreRad * 0.85, 1.5, 32),
+    new THREE.MeshStandardMaterial({ color: 0x6a6a6e, metalness: 0.7, roughness: 0.4 })
+  );
+  boattail.rotation.x = Math.PI / 2;
+  boattail.position.z = coreLen / 2 + 0.7;
+  ship.add(boattail);
+
+  // White intertank band
+  const intertankBand = new THREE.Mesh(
+    new THREE.CylinderGeometry(coreRad * 1.02, coreRad * 1.02, 1.2, 36),
+    new THREE.MeshStandardMaterial({ color: 0xe8e6e0, metalness: 0.3, roughness: 0.55 })
+  );
+  intertankBand.rotation.x = Math.PI / 2;
+  intertankBand.position.z = -1;
+  ship.add(intertankBand);
+  // "USA" letters on intertank (simple white blocks)
+  const usaMat = new THREE.MeshStandardMaterial({ color: 0x202428, metalness: 0.4, roughness: 0.5 });
+  for (let i = 0; i < 3; i++) {
+    const letter = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.5, 0.04), usaMat);
+    letter.position.set(-0.5 + i * 0.5, 0, -1 - coreRad * 1.03);
+    ship.add(letter);
   }
 
-  // SRBs (white with red/black banding)
+  // === SRBs (5-segment style for SLS) ===
   leftBooster = buildSRB(1);
-  leftBooster.position.set(coreRad + 1.1, 0, 0.5);
+  leftBooster.position.set(coreRad + 1.15, 0, 0.6);
   ship.add(leftBooster);
-  rightBooster = buildSRB(-1);
-  rightBooster.position.set(-(coreRad + 1.1), 0, 0.5);
-  ship.add(rightBooster);
+  engineGlows.push(leftBooster.userData.glowDisc);
+  enginePlumes.push(leftBooster.userData.plume);
+  enginePositionsLocal.push(leftBooster.userData.exhaustPos.clone().add(leftBooster.position));
 
-  // ICPS Upper stage (smaller white cylinder on top)
-  const icpsLen = 3;
+  rightBooster = buildSRB(-1);
+  rightBooster.position.set(-(coreRad + 1.15), 0, 0.6);
+  ship.add(rightBooster);
+  engineGlows.push(rightBooster.userData.glowDisc);
+  enginePlumes.push(rightBooster.userData.plume);
+  enginePositionsLocal.push(rightBooster.userData.exhaustPos.clone().add(rightBooster.position));
+
+  // SRB attach struts
+  for (const side of [-1, 1]) {
+    for (const sz of [-3, 1]) {
+      const strut = new THREE.Mesh(
+        new THREE.BoxGeometry(1.05, 0.18, 0.18),
+        new THREE.MeshStandardMaterial({ color: 0x6a6a6e, metalness: 0.7, roughness: 0.5 })
+      );
+      strut.position.set(side * (coreRad + 0.55), 0, sz);
+      ship.add(strut);
+    }
+  }
+
+  // === Launch Vehicle Stage Adapter (LVSA) - white tapered cone ===
+  const lvsaLen = 1.4;
+  const lvsa = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.95, coreRad, lvsaLen, 24),
+    new THREE.MeshStandardMaterial({ color: 0xe8e6e0, metalness: 0.3, roughness: 0.55 })
+  );
+  lvsa.rotation.x = Math.PI / 2;
+  lvsa.position.z = -coreLen / 2 - lvsaLen / 2 - 0.3;
+  ship.add(lvsa);
+
+  // === ICPS (Interim Cryogenic Propulsion Stage) - white cylinder ===
+  const icpsLen = 2.4;
   const icpsRad = 0.85;
+  const icpsZ = -coreLen / 2 - lvsaLen - icpsLen / 2 - 0.3;
   const icps = new THREE.Mesh(
-    new THREE.CylinderGeometry(icpsRad, coreRad * 0.95, icpsLen, 24),
-    new THREE.MeshStandardMaterial({ color: 0xe8e6e0, metalness: 0.4, roughness: 0.5 })
+    new THREE.CylinderGeometry(icpsRad, icpsRad, icpsLen, 28),
+    new THREE.MeshStandardMaterial({ color: 0xe8e6e0, metalness: 0.3, roughness: 0.55 })
   );
   icps.rotation.x = Math.PI / 2;
-  icps.position.z = -coreLen / 2 - icpsLen / 2;
+  icps.position.z = icpsZ;
   ship.add(icps);
+  // RL-10 engine bell on ICPS (visible from gap below ICPS)
+  const rl10 = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.18, 0.32, 0.55, 18),
+    new THREE.MeshStandardMaterial({ color: 0x303236, metalness: 0.9, roughness: 0.35 })
+  );
+  rl10.rotation.x = Math.PI / 2;
+  rl10.position.z = icpsZ + icpsLen / 2 + 0.27;
+  ship.add(rl10);
 
-  // Service module + Orion capsule cone on top
-  const serviceLen = 1.5;
-  const service = new THREE.Mesh(
-    new THREE.CylinderGeometry(icpsRad * 0.92, icpsRad, serviceLen, 20),
-    new THREE.MeshStandardMaterial({ color: 0x707880, metalness: 0.7, roughness: 0.4 })
+  // === Orion Service Module (cylindrical, dark) ===
+  const smLen = 1.4;
+  const smZ = icpsZ - icpsLen / 2 - smLen / 2 - 0.05;
+  const sm = new THREE.Mesh(
+    new THREE.CylinderGeometry(icpsRad * 0.95, icpsRad, smLen, 24),
+    new THREE.MeshStandardMaterial({ color: 0x4a5258, metalness: 0.6, roughness: 0.5 })
   );
-  service.rotation.x = Math.PI / 2;
-  service.position.z = -coreLen / 2 - icpsLen - serviceLen / 2;
-  ship.add(service);
-  // Solar panels on service module
-  for (const side of [-1, 1]) {
-    const panel = new THREE.Mesh(
-      new THREE.BoxGeometry(3.5, 0.05, 1.0),
-      new THREE.MeshStandardMaterial({ color: 0x16294a, metalness: 0.4, roughness: 0.45, side: THREE.DoubleSide })
+  sm.rotation.x = Math.PI / 2;
+  sm.position.z = smZ;
+  ship.add(sm);
+  // Service module engine (Aerojet AJ-10)
+  const smEng = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.18, 0.32, 0.55, 18),
+    new THREE.MeshStandardMaterial({ color: 0x303236, metalness: 0.9, roughness: 0.35 })
+  );
+  smEng.rotation.x = Math.PI / 2;
+  smEng.position.z = smZ + smLen / 2 + 0.27;
+  ship.add(smEng);
+  // Solar arrays (4 panels, two pairs)
+  const solarMat = new THREE.MeshStandardMaterial({
+    color: 0x122550, metalness: 0.35, roughness: 0.45, side: THREE.DoubleSide
+  });
+  for (let side of [-1, 1]) {
+    for (let i = 0; i < 2; i++) {
+      const panel = new THREE.Mesh(new THREE.BoxGeometry(3.5, 0.06, 0.9), solarMat);
+      panel.position.set(side * (1.8 + i * 3.6), 0, smZ);
+      ship.add(panel);
+      // Frame
+      for (const e of [-0.45, 0.45]) {
+        const fr = new THREE.Mesh(
+          new THREE.BoxGeometry(3.55, 0.08, 0.04),
+          new THREE.MeshStandardMaterial({ color: 0x88a0b0, metalness: 0.7, roughness: 0.4 })
+        );
+        fr.position.set(side * (1.8 + i * 3.6), 0, smZ + e);
+        ship.add(fr);
+      }
+    }
+    // Connecting arm to SM
+    const arm = new THREE.Mesh(
+      new THREE.BoxGeometry(0.6, 0.06, 0.06),
+      new THREE.MeshStandardMaterial({ color: 0x888888, metalness: 0.7 })
     );
-    panel.position.set(side * 2.0, 0, -coreLen / 2 - icpsLen - serviceLen / 2);
-    ship.add(panel);
+    arm.position.set(side * 0.8, 0, smZ);
+    ship.add(arm);
   }
-  // Orion capsule
-  const orion = new THREE.Mesh(
-    new THREE.ConeGeometry(icpsRad * 0.9, 1.8, 24),
-    new THREE.MeshStandardMaterial({ color: 0xc8ccd0, metalness: 0.5, roughness: 0.45 })
+
+  // === Orion Crew Module (truncated cone capsule) ===
+  const cmZ = smZ - smLen / 2 - 0.5;
+  const cm = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.45, icpsRad, 1.1, 24),
+    new THREE.MeshStandardMaterial({ color: 0xe2e6ea, metalness: 0.4, roughness: 0.55 })
   );
-  orion.rotation.x = -Math.PI / 2;
-  orion.position.z = -coreLen / 2 - icpsLen - serviceLen - 0.9;
-  ship.add(orion);
-  // Launch abort tower (red rod)
-  const lat = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.12, 0.18, 2.5, 12),
+  cm.rotation.x = Math.PI / 2;
+  cm.position.z = cmZ;
+  ship.add(cm);
+  // Heat shield (dark brown bottom)
+  const heat = new THREE.Mesh(
+    new THREE.CylinderGeometry(icpsRad, icpsRad * 0.98, 0.18, 24),
+    new THREE.MeshStandardMaterial({ color: 0x442218, metalness: 0.4, roughness: 0.75 })
+  );
+  heat.rotation.x = Math.PI / 2;
+  heat.position.z = cmZ + 0.55;
+  ship.add(heat);
+  // Capsule windows
+  for (let i = 0; i < 4; i++) {
+    const ang = i * Math.PI / 2 + Math.PI / 4;
+    const win = new THREE.Mesh(
+      new THREE.BoxGeometry(0.15, 0.18, 0.04),
+      new THREE.MeshBasicMaterial({ color: 0x6abedc })
+    );
+    win.position.set(Math.cos(ang) * 0.5, Math.sin(ang) * 0.5, cmZ - 0.1);
+    win.lookAt(0, 0, cmZ - 0.1);
+    ship.add(win);
+  }
+
+  // === Launch Abort System (LAS) - red tower with motor cone ===
+  const lasBase = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.45, 0.45, 0.7, 20),
+    new THREE.MeshStandardMaterial({ color: 0xc04848, metalness: 0.4, roughness: 0.5 })
+  );
+  lasBase.rotation.x = Math.PI / 2;
+  lasBase.position.z = cmZ - 0.55 - 0.35;
+  ship.add(lasBase);
+  // Tower spire
+  const lasTower = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.10, 0.16, 2.0, 12),
     new THREE.MeshStandardMaterial({ color: 0xc04848, metalness: 0.4, roughness: 0.45 })
   );
-  lat.rotation.x = Math.PI / 2;
-  lat.position.z = -coreLen / 2 - icpsLen - serviceLen - 1.8 - 1.25;
-  ship.add(lat);
+  lasTower.rotation.x = Math.PI / 2;
+  lasTower.position.z = cmZ - 1.0 - 1.0;
+  ship.add(lasTower);
+  // Abort motor jet nozzles (4 around the base)
+  for (let i = 0; i < 4; i++) {
+    const ang = i * Math.PI / 2;
+    const noz = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.06, 0.10, 0.3, 10),
+      new THREE.MeshStandardMaterial({ color: 0x2a2c30, metalness: 0.9, roughness: 0.3 })
+    );
+    noz.position.set(Math.cos(ang) * 0.42, Math.sin(ang) * 0.42, cmZ - 0.85);
+    noz.lookAt(Math.cos(ang) * 0.8, Math.sin(ang) * 0.8, cmZ - 0.4);
+    ship.add(noz);
+  }
+  // LAS tip
+  const lasTip = new THREE.Mesh(
+    new THREE.ConeGeometry(0.05, 0.4, 8),
+    new THREE.MeshStandardMaterial({ color: 0x444444, metalness: 0.7 })
+  );
+  lasTip.rotation.x = -Math.PI / 2;
+  lasTip.position.z = cmZ - 1.0 - 2.0 - 0.2;
+  ship.add(lasTip);
 
-  // 4 RS-25 engines at the bottom of core stage
-  const coreEngines = makeEngineCluster(0, 0, coreLen / 2 + 0.5, 4, 0.4, 1.4);
+  // === 4 RS-25 main engines at bottom of core ===
+  const coreEngines = makeEngineCluster(0, 0, coreLen / 2 + 1.4, 4, 0.42, 1.5);
   ship.add(coreEngines);
 }
 
