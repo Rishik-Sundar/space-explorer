@@ -2874,6 +2874,21 @@ function buildDiscovery() {
   // Orbiter geometry: belly is on -Y side. Rotate around Z so -Y points toward -X (tank).
   orbiter.position.set(tankRad + 0.85, 0, 0.6);
   orbiter.rotation.z = -Math.PI / 2;
+  // Tag as capsule — this is what stays after stage separation
+  orbiter.userData.isCapsule = true;
+  orbiter.userData.capsuleEngines = [{
+    glow: engineGlows[engineGlows.length - 3],
+    plume: enginePlumes[enginePlumes.length - 3],
+    localPos: enginePositionsLocal[enginePositionsLocal.length - 3].clone()
+  }, {
+    glow: engineGlows[engineGlows.length - 2],
+    plume: enginePlumes[enginePlumes.length - 2],
+    localPos: enginePositionsLocal[enginePositionsLocal.length - 2].clone()
+  }, {
+    glow: engineGlows[engineGlows.length - 1],
+    plume: enginePlumes[enginePlumes.length - 1],
+    localPos: enginePositionsLocal[enginePositionsLocal.length - 1].clone()
+  }];
   ship.add(orbiter);
 
   // Forward attach struts (two short bars from orbiter to tank)
@@ -2987,69 +3002,89 @@ function buildArtemis() {
   rl10.position.z = icpsZ + icpsLen / 2 + 0.27;
   ship.add(rl10);
 
-  // === Orion Service Module (cylindrical, dark) ===
+  // === ORION CAPSULE GROUP (everything that stays after orbital insertion) ===
+  const orionGroup = new THREE.Group();
+  // Compute Orion group's center position (mid-point of SM + CM area)
   const smLen = 1.4;
   const smZ = icpsZ - icpsLen / 2 - smLen / 2 - 0.05;
+  const orionCenterZ = smZ; // anchor point
+  // Service Module (cylindrical, dark)
   const sm = new THREE.Mesh(
     new THREE.CylinderGeometry(icpsRad * 0.95, icpsRad, smLen, 24),
     new THREE.MeshStandardMaterial({ color: 0x4a5258, metalness: 0.6, roughness: 0.5 })
   );
   sm.rotation.x = Math.PI / 2;
-  sm.position.z = smZ;
-  ship.add(sm);
-  // Service module engine (Aerojet AJ-10)
-  const smEng = new THREE.Mesh(
+  sm.position.z = 0;
+  orionGroup.add(sm);
+  // SM engine bell (visible)
+  const smEngBell = new THREE.Mesh(
     new THREE.CylinderGeometry(0.18, 0.32, 0.55, 18),
     new THREE.MeshStandardMaterial({ color: 0x303236, metalness: 0.9, roughness: 0.35 })
   );
-  smEng.rotation.x = Math.PI / 2;
-  smEng.position.z = smZ + smLen / 2 + 0.27;
-  ship.add(smEng);
-  // Solar arrays (4 panels, two pairs)
+  smEngBell.rotation.x = Math.PI / 2;
+  smEngBell.position.z = smLen / 2 + 0.27;
+  orionGroup.add(smEngBell);
+  // SM engine glow + plume (for after-jettison flight)
+  const smGlow = new THREE.Mesh(
+    new THREE.CircleGeometry(0.30, 24),
+    new THREE.MeshBasicMaterial({ color: 0xfff0c0, transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false })
+  );
+  smGlow.position.z = smLen / 2 + 0.6;
+  smGlow.rotation.y = Math.PI;
+  orionGroup.add(smGlow);
+  const smPlume = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.05, 0.32, 2.0, 18, 1, true),
+    new THREE.MeshBasicMaterial({ color: 0xffaa44, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide })
+  );
+  smPlume.rotation.x = Math.PI / 2;
+  smPlume.userData.baseZ = smLen / 2 + 0.7;
+  smPlume.userData.height = 2.0;
+  smPlume.position.z = smPlume.userData.baseZ + 1.0;
+  orionGroup.add(smPlume);
+
+  // Solar arrays (4 panels, two pairs) — part of Orion
   const solarMat = new THREE.MeshStandardMaterial({
     color: 0x122550, metalness: 0.35, roughness: 0.45, side: THREE.DoubleSide
   });
   for (let side of [-1, 1]) {
     for (let i = 0; i < 2; i++) {
       const panel = new THREE.Mesh(new THREE.BoxGeometry(3.5, 0.06, 0.9), solarMat);
-      panel.position.set(side * (1.8 + i * 3.6), 0, smZ);
-      ship.add(panel);
-      // Frame
+      panel.position.set(side * (1.8 + i * 3.6), 0, 0);
+      orionGroup.add(panel);
       for (const e of [-0.45, 0.45]) {
         const fr = new THREE.Mesh(
           new THREE.BoxGeometry(3.55, 0.08, 0.04),
           new THREE.MeshStandardMaterial({ color: 0x88a0b0, metalness: 0.7, roughness: 0.4 })
         );
-        fr.position.set(side * (1.8 + i * 3.6), 0, smZ + e);
-        ship.add(fr);
+        fr.position.set(side * (1.8 + i * 3.6), 0, e);
+        orionGroup.add(fr);
       }
     }
-    // Connecting arm to SM
     const arm = new THREE.Mesh(
       new THREE.BoxGeometry(0.6, 0.06, 0.06),
       new THREE.MeshStandardMaterial({ color: 0x888888, metalness: 0.7 })
     );
-    arm.position.set(side * 0.8, 0, smZ);
-    ship.add(arm);
+    arm.position.set(side * 0.8, 0, 0);
+    orionGroup.add(arm);
   }
 
-  // === Orion Crew Module (truncated cone capsule) ===
-  const cmZ = smZ - smLen / 2 - 0.5;
+  // Crew Module (truncated cone capsule)
+  const cmLocalZ = -smLen / 2 - 0.5;
   const cm = new THREE.Mesh(
     new THREE.CylinderGeometry(0.45, icpsRad, 1.1, 24),
     new THREE.MeshStandardMaterial({ color: 0xe2e6ea, metalness: 0.4, roughness: 0.55 })
   );
   cm.rotation.x = Math.PI / 2;
-  cm.position.z = cmZ;
-  ship.add(cm);
+  cm.position.z = cmLocalZ;
+  orionGroup.add(cm);
   // Heat shield (dark brown bottom)
   const heat = new THREE.Mesh(
     new THREE.CylinderGeometry(icpsRad, icpsRad * 0.98, 0.18, 24),
     new THREE.MeshStandardMaterial({ color: 0x442218, metalness: 0.4, roughness: 0.75 })
   );
   heat.rotation.x = Math.PI / 2;
-  heat.position.z = cmZ + 0.55;
-  ship.add(heat);
+  heat.position.z = cmLocalZ + 0.55;
+  orionGroup.add(heat);
   // Capsule windows
   for (let i = 0; i < 4; i++) {
     const ang = i * Math.PI / 2 + Math.PI / 4;
@@ -3057,10 +3092,20 @@ function buildArtemis() {
       new THREE.BoxGeometry(0.15, 0.18, 0.04),
       new THREE.MeshBasicMaterial({ color: 0x6abedc })
     );
-    win.position.set(Math.cos(ang) * 0.5, Math.sin(ang) * 0.5, cmZ - 0.1);
-    win.lookAt(0, 0, cmZ - 0.1);
-    ship.add(win);
+    win.position.set(Math.cos(ang) * 0.5, Math.sin(ang) * 0.5, cmLocalZ - 0.1);
+    win.lookAt(0, 0, cmLocalZ - 0.1);
+    orionGroup.add(win);
   }
+
+  // Tag as capsule and store engine refs for jettison
+  orionGroup.position.z = orionCenterZ;
+  orionGroup.userData.isCapsule = true;
+  orionGroup.userData.capsuleEngines = [{
+    glow: smGlow,
+    plume: smPlume,
+    localPos: new THREE.Vector3(0, 0, smLen / 2 + 1.0) // in orion local frame
+  }];
+  ship.add(orionGroup);
 
   // === Launch Abort System (LAS) - red tower with motor cone ===
   const lasBase = new THREE.Mesh(
@@ -3608,6 +3653,60 @@ function explodeShip(title = 'STRUCTURAL FAILURE', message = 'The vehicle has br
 // =============================================================
 // BOOSTER SEPARATION
 // =============================================================
+// Jettison everything except the tagged capsule group (called at orbital insertion)
+function jettisonToCapsule() {
+  let capsule = null;
+  for (const child of ship.children) {
+    if (child.userData && child.userData.isCapsule) { capsule = child; break; }
+  }
+  if (!capsule) return; // no capsule defined (Hail Mary) — skip
+  // Save capsule's world transform so the visual doesn't jump
+  const capWorld = new THREE.Vector3();
+  capsule.getWorldPosition(capWorld);
+  const capQuat = new THREE.Quaternion();
+  capsule.getWorldQuaternion(capQuat);
+  // Jettison every non-capsule child as drifting debris
+  const toJettison = ship.children.filter(c => c !== capsule);
+  for (const part of toJettison) {
+    const wp = new THREE.Vector3();
+    part.getWorldPosition(wp);
+    const wq = new THREE.Quaternion();
+    part.getWorldQuaternion(wq);
+    ship.remove(part);
+    scene.add(part);
+    part.position.copy(wp);
+    part.quaternion.copy(wq);
+    const driftDir = new THREE.Vector3((Math.random() - 0.5), (Math.random() - 0.5), 1).normalize();
+    driftDir.applyQuaternion(capQuat);
+    crashDebris.push({
+      mesh: part,
+      velocity: velocity.clone().addScaledVector(driftDir, 4 + Math.random() * 4),
+      rotVel: new THREE.Vector3((Math.random() - 0.5) * 0.4, (Math.random() - 0.5) * 0.4, (Math.random() - 0.5) * 0.4),
+      life: 120
+    });
+  }
+  // Re-anchor capsule at ship origin, move ship to capsule's old world position
+  capsule.position.set(0, 0, 0);
+  capsule.quaternion.identity();
+  ship.position.copy(capWorld);
+  ship.quaternion.copy(capQuat);
+  // Reset engine arrays — only capsule's engines fire now
+  engineGlows.length = 0;
+  enginePlumes.length = 0;
+  enginePositionsLocal.length = 0;
+  if (capsule.userData.capsuleEngines) {
+    for (const eng of capsule.userData.capsuleEngines) {
+      engineGlows.push(eng.glow);
+      enginePlumes.push(eng.plume);
+      enginePositionsLocal.push(eng.localPos.clone());
+    }
+  }
+  // Show separation banner
+  flashName.textContent = 'CAPSULE SEPARATION';
+  flash.classList.add('show');
+  flashTimer = 3.0;
+}
+
 function separateBoosters() {
   for (const item of [[leftBooster, 1], [rightBooster, -1]]) {
     const booster = item[0];
@@ -4540,6 +4639,8 @@ function animate() {
       phaseHud.classList.remove('show');
       attitudeHud.classList.remove('show');
       stressHud.classList.remove('show');
+      // Jettison stages — leaves just the capsule for Discovery + Artemis
+      jettisonToCapsule();
       // Show big "ORBIT ACHIEVED" banner
       flashName.textContent = 'ORBIT ACHIEVED';
       flash.classList.add('show');
