@@ -4151,30 +4151,66 @@ function beginLaunchSequence(lockPointer = true) {
 // Files supported: models/hail-mary.glb, models/discovery.glb, models/artemis.glb
 const gltfLoader = new GLTFLoader();
 const GLB_SCALE = { 'discovery': 0.5, 'artemis': 0.4 };
+// Load a model, auto-scale to targetH (longest axis), center, and orient so
+// its longest axis is along the ship's local Z (the launch up/down axis).
+function loadAndOrient(url, targetH, posOffset, onLoad) {
+  gltfLoader.load(url, (gltf) => {
+    const m = gltf.scene;
+    let box = new THREE.Box3().setFromObject(m);
+    const size = box.getSize(new THREE.Vector3());
+    const longest = Math.max(size.x, size.y, size.z);
+    const scale = targetH / longest;
+    m.scale.set(scale, scale, scale);
+    // Re-bound after scale
+    box = new THREE.Box3().setFromObject(m);
+    const center = box.getCenter(new THREE.Vector3());
+    m.position.sub(center);
+    // Orient so the longest dimension lies along ship +Z (launch axis)
+    if (size.y === longest) {
+      m.rotation.x = Math.PI / 2;       // model's Y → ship's Z
+    } else if (size.x === longest) {
+      m.rotation.y = -Math.PI / 2;      // model's X → ship's Z
+    }
+    // Apply position offset (in ship local frame)
+    m.position.add(posOffset);
+    ship.add(m);
+    onLoad && onLoad(m);
+    console.log('[Stellar Drift] Loaded part:', url);
+  }, undefined, (err) => {
+    console.log('[Stellar Drift] Part not loaded:', url);
+  });
+}
+
 function tryLoadRealModel(shipType) {
-  // Hail Mary is fictional (Project Hail Mary novel) — no real NASA model exists.
-  // Keep the procedural Hail Mary ship.
+  // Hail Mary is fictional — no real model.
   if (shipType === 'hail-mary') return;
+  if (shipType === 'discovery') {
+    // Assemble from separate parts: external tank + 2 SRBs + orbiter
+    // Hide procedural ship parts first
+    for (const child of ship.children) child.visible = false;
+    loadAndOrient('./models/external-tank.glb', 16, new THREE.Vector3(0, 0, 0));
+    loadAndOrient('./models/srb.glb',           14, new THREE.Vector3( 2.6, 0, 0.5));
+    loadAndOrient('./models/srb.glb',           14, new THREE.Vector3(-2.6, 0, 0.5));
+    loadAndOrient('./models/orbiter.glb',        9, new THREE.Vector3(0, 2.5, 0.8));
+    return;
+  }
+  // Other ships: single .glb model
   const url = `./models/${shipType}.glb`;
   gltfLoader.load(
     url,
     (gltf) => {
       console.log('[Stellar Drift] Loaded real model for', shipType);
-      // Hide all procedural ship children
       for (const child of ship.children) child.visible = false;
       const model = gltf.scene;
       const s = GLB_SCALE[shipType] || 1.0;
       model.scale.set(s, s, s);
-      // Center model — some GLBs have offset origins
       const box = new THREE.Box3().setFromObject(model);
       const center = box.getCenter(new THREE.Vector3());
       model.position.sub(center);
       ship.add(model);
     },
     undefined,
-    (err) => {
-      console.log('[Stellar Drift] No real model at', url, '(using procedural)');
-    }
+    () => { console.log('[Stellar Drift] No real model at', url, '(using procedural)'); }
   );
 }
 
