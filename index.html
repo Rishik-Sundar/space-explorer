@@ -711,12 +711,18 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 
 // =============================================================
 // RENDERER + SCENE
 // =============================================================
-const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+const pageQuery = new URLSearchParams(window.location.search);
+const renderer = new THREE.WebGLRenderer({
+  antialias: true,
+  powerPreference: 'high-performance',
+  preserveDrawingBuffer: pageQuery.has('debugshot')
+});
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -3606,6 +3612,30 @@ const padBase = new THREE.Mesh(new THREE.CylinderGeometry(8.4, 9.2, 0.5, 64), pa
 padBase.position.y = -0.2;
 padGroup.add(padBase);
 
+// Shuttle-style mobile launcher deck so Discovery sits on a real platform, not just a round slab.
+const mobileLauncherDeck = new THREE.Mesh(
+  new THREE.BoxGeometry(11.5, 0.55, 7.2),
+  new THREE.MeshStandardMaterial({ color: 0x6f7478, metalness: 0.65, roughness: 0.5 })
+);
+mobileLauncherDeck.position.y = 0.22;
+padGroup.add(mobileLauncherDeck);
+
+const flameTrench = new THREE.Mesh(
+  new THREE.BoxGeometry(3.4, 0.08, 5.8),
+  new THREE.MeshStandardMaterial({ color: 0x151719, metalness: 0.35, roughness: 0.85 })
+);
+flameTrench.position.set(0, 0.52, 0);
+padGroup.add(flameTrench);
+
+for (const zSide of [-1, 1]) {
+  const rail = new THREE.Mesh(
+    new THREE.BoxGeometry(11.2, 0.12, 0.12),
+    new THREE.MeshStandardMaterial({ color: 0xb9bec2, metalness: 0.8, roughness: 0.35 })
+  );
+  rail.position.set(0, 0.76, zSide * 3.35);
+  padGroup.add(rail);
+}
+
 // Light scorch mark on the pad
 const scorchRing = new THREE.Mesh(
   new THREE.RingGeometry(2.5, 5.5, 72),
@@ -4047,9 +4077,10 @@ function separateBoosters() {
     if (bpm.uniforms) bpm.uniforms.uOpacity.value = 0; else bpm.opacity = 0;
   }
   // Remove booster engines from active engine list
-  engineGlows.splice(3, 2);
-  enginePlumes.splice(3, 2);
-  enginePositionsLocal.splice(3, 2);
+  const boosterEngineStart = selectedShipType === 'discovery' ? 0 : 3;
+  engineGlows.splice(boosterEngineStart, 2);
+  enginePlumes.splice(boosterEngineStart, 2);
+  enginePositionsLocal.splice(boosterEngineStart, 2);
   // Brief separation burst at boosters' position
   spawnExplosionBurst(ship.position);
 }
@@ -4265,6 +4296,9 @@ function beginLaunchSequence(lockPointer = true) {
 // the game will replace the procedural ship with that model.
 // Files supported: models/hail-mary.glb, models/discovery.glb, models/artemis.glb
 const gltfLoader = new GLTFLoader();
+const dracoLoader = new DRACOLoader();
+dracoLoader.setDecoderPath('https://unpkg.com/three@0.160.0/examples/jsm/libs/draco/');
+gltfLoader.setDRACOLoader(dracoLoader);
 const GLB_SCALE = { 'discovery': 0.5, 'artemis': 0.4 };
 const stlLoader = new STLLoader();
 
@@ -4340,6 +4374,99 @@ function loadAndOrient(url, targetH, posOffset, opts = {}) {
   }
 }
 
+function loadGLBModel(url) {
+  return new Promise((resolve, reject) => {
+    gltfLoader.load(url, (gltf) => resolve(gltf.scene), undefined, reject);
+  });
+}
+
+function prepareRealModelPart(model, targetLength, extraRot) {
+  orientPlace(model, targetLength, new THREE.Vector3(), extraRot);
+  model.traverse((child) => {
+    if (!child.isMesh) return;
+    child.castShadow = true;
+    child.receiveShadow = true;
+    if (child.material) {
+      child.material.needsUpdate = true;
+    }
+  });
+  model.updateMatrixWorld(true);
+  return model;
+}
+
+function makeDiscoveryAttachStrut(x, y, z, length, radius = 0.055) {
+  const strut = new THREE.Mesh(
+    new THREE.CylinderGeometry(radius, radius, length, 12),
+    new THREE.MeshStandardMaterial({ color: 0xcfd4d8, metalness: 0.75, roughness: 0.35 })
+  );
+  strut.rotation.z = Math.PI / 2;
+  strut.position.set(x, y, z);
+  return strut;
+}
+
+function loadDiscoveryStackFromParts() {
+  Promise.all([
+    loadGLBModel('./models/orbiter.glb'),
+    loadGLBModel('./models/external-tank.glb'),
+    loadGLBModel('./models/srb.glb'),
+  ]).then(([orbiterModel, tankModel, srbModel]) => {
+    const stack = new THREE.Group();
+    stack.name = 'real-discovery-stack';
+
+    const tankLength = 18.2;
+    const srbLength = 17.4;
+    const orbiterLength = 14.2;
+    const tank = prepareRealModelPart(tankModel, tankLength);
+    const srbA = prepareRealModelPart(srbModel, srbLength);
+    const srbB = srbA.clone(true);
+    const orbiter = prepareRealModelPart(orbiterModel, orbiterLength, { z: -Math.PI / 2 });
+
+    tank.position.set(0, 0, 0);
+    const boosterX = 3.05;
+    const boosterZ = 0.45;
+    srbA.position.set(-boosterX, 0, boosterZ);
+    srbB.position.set(boosterX, 0, boosterZ);
+
+    // The orbiter model's wingspan starts on local Y after the axis conversion.
+    // Rolling it 90 degrees puts the wings across X, then this offsets the belly
+    // against the external tank like the real shuttle stack.
+    const orbiterY = 2.62;
+    const orbiterZ = 0.95;
+    orbiter.position.set(0, orbiterY, orbiterZ);
+
+    stack.add(tank, srbA, srbB, orbiter);
+    stack.add(makeDiscoveryAttachStrut(-1.05, 1.35, -4.9, 2.8, 0.045));
+    stack.add(makeDiscoveryAttachStrut(1.05, 1.35, -4.9, 2.8, 0.045));
+    stack.add(makeDiscoveryAttachStrut(-1.15, 1.22, 4.9, 2.5, 0.06));
+    stack.add(makeDiscoveryAttachStrut(1.15, 1.22, 4.9, 2.5, 0.06));
+
+    const stackRoll = Math.PI / 2;
+    stack.rotation.z = stackRoll;
+    ship.add(stack);
+    const baseEngineLayout = [
+      { x: -boosterX, y: 0, z: 9.25, height: 4.6, particleZ: 9.6 },
+      { x: boosterX, y: 0, z: 9.25, height: 4.6, particleZ: 9.6 },
+      { x: -0.62, y: orbiterY, z: 8.0, height: 2.5, particleZ: 8.35 },
+      { x: 0.62, y: orbiterY, z: 8.0, height: 2.5, particleZ: 8.35 },
+      { x: 0, y: orbiterY + 0.42, z: 7.82, height: 2.5, particleZ: 8.15 },
+    ];
+    const cosRoll = Math.cos(stackRoll);
+    const sinRoll = Math.sin(stackRoll);
+    const engineLayout = baseEngineLayout.map((p) => ({
+      ...p,
+      x: p.x * cosRoll - p.y * sinRoll,
+      y: p.x * sinRoll + p.y * cosRoll,
+    }));
+    adoptRealModel(stack, engineLayout);
+    console.log('[Stellar Drift] Loaded Discovery stack from orbiter/tank/SRB GLBs');
+  }).catch((err) => {
+    console.warn('[Stellar Drift] Failed to assemble Discovery GLBs; falling back to combined model:', err);
+    loadAndOrient('./models/discovery.glb', 22, new THREE.Vector3(0, 0, 0), {
+      onLoad: adoptRealModel,
+    });
+  });
+}
+
 // Position-based SLS paint scheme: orange core (central column), white SRBs (off-axis cylinders),
 // white Orion at the top. We use a custom ShaderMaterial that picks color based on
 // distance from the center axis and the vertical position along the rocket.
@@ -4406,7 +4533,7 @@ function createSLSMaterial() {
 // engine flames visible at the bottom of the new model. We re-parent each plume/glow
 // directly to `ship` so it survives the procedural hide, and reposition it at the
 // real model's exhaust point.
-function adoptRealModel(m) {
+function adoptRealModel(m, engineLayout = null) {
   m.userData.isRealModel = true;
   // Measure the real model so we know where its "bottom" (engine end) is in ship space.
   // After orientPlace + ship.add, the model lives in ship local space.
@@ -4424,15 +4551,20 @@ function adoptRealModel(m) {
   for (let i = 0; i < enginePlumes.length; i++) {
     const plume = enginePlumes[i];
     const glow = engineGlows[i];
-    // Distribute across the rocket's bottom width: spread along X around center.
+    const layout = engineLayout && engineLayout[i];
+    // Distribute across the rocket's bottom width unless the caller supplies exact engine positions.
     const t = enginePlumes.length === 1 ? 0 : (i / (enginePlumes.length - 1)) - 0.5;
-    const ex = t * halfWidthX * 0.9;
+    const ex = layout ? layout.x : t * halfWidthX * 0.9;
+    const ey = layout ? layout.y : 0;
+    const ez = layout ? layout.z : exhaustZ - 0.1;
+    const plumeHeight = layout ? layout.height : (plume.userData.height || 3);
     ship.attach(plume); // preserves world transform, re-parents to ship
     ship.attach(glow);
-    plume.position.set(ex, 0, exhaustZ - 0.1);
-    glow.position.set(ex, 0, exhaustZ - 0.4);
-    plume.userData.baseZ = exhaustZ - 0.1;
-    plume.userData.height = plume.userData.height || 3;
+    plume.position.set(ex, ey, ez + plumeHeight / 2);
+    glow.position.set(ex, ey, ez - 0.05);
+    plume.userData.baseZ = ez;
+    plume.userData.height = plumeHeight;
+    enginePositionsLocal[i] = new THREE.Vector3(ex, ey, layout ? layout.particleZ : ez + 0.45);
   }
   // Hide procedural hull
   const sharedShipChildren = new Set([shipLight, shipLight2, heatShieldVisuals]);
@@ -4447,11 +4579,9 @@ function tryLoadRealModel(shipType) {
   // Hail Mary is fictional — no real model.
   if (shipType === 'hail-mary') return;
   if (shipType === 'discovery') {
-    // Use the all-in-one Discovery model (orbiter + ET + SRBs already assembled).
-    // Hide procedural ONLY after the model loads — failure leaves the procedural shuttle visible.
-    loadAndOrient('./models/discovery.glb', 22, new THREE.Vector3(0, 0, 0), {
-      onLoad: adoptRealModel,
-    });
+    // Build Discovery from separate real orbiter, external tank, and SRB GLBs so
+    // the orbiter mounts correctly on the tank instead of relying on a bad combined file.
+    loadDiscoveryStackFromParts();
     return;
   }
   if (shipType === 'artemis') {
@@ -4492,7 +4622,16 @@ function tryLoadRealModel(shipType) {
 
 // === Ship picker wiring ===
 const SHIP_STORAGE_KEY = 'stellarDriftShip';
-const selectedShipType = localStorage.getItem(SHIP_STORAGE_KEY) || 'hail-mary';
+const launchQuery = pageQuery;
+const queryShipType = launchQuery.get('ship');
+const validShipTypes = ['hail-mary', 'discovery', 'artemis'];
+const storedShipType = localStorage.getItem(SHIP_STORAGE_KEY);
+const selectedShipType = validShipTypes.includes(queryShipType)
+  ? queryShipType
+  : (validShipTypes.includes(storedShipType) ? storedShipType : 'hail-mary');
+if (validShipTypes.includes(queryShipType) && storedShipType !== queryShipType) {
+  localStorage.setItem(SHIP_STORAGE_KEY, queryShipType);
+}
 // Highlight current selection
 document.querySelectorAll('.ship-card').forEach(card => {
   if (card.dataset.ship === selectedShipType) card.classList.add('selected');
@@ -4521,7 +4660,7 @@ else if (selectedShipType === 'artemis') buildArtemis();
 tryLoadRealModel(selectedShipType);
 
 intro.addEventListener('click', () => beginLaunchSequence(true));
-if (new URLSearchParams(window.location.search).has('autostart')) {
+if (launchQuery.has('autostart')) {
   setTimeout(() => beginLaunchSequence(false), 250);
 }
 
