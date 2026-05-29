@@ -2708,46 +2708,71 @@ function buildSRB(side) {
   return srb;
 }
 
-// NASA / Discovery / US flag decal on a small flat plate for the orbiter side
+// NASA meatball + US flag + Discovery decal for the orbiter side
 function makeDiscoveryDecal() {
   const c = document.createElement('canvas');
   c.width = 512; c.height = 128;
   const x = c.getContext('2d');
   x.fillStyle = '#efefe9';
   x.fillRect(0, 0, c.width, c.height);
-  // NASA worm logo (red italic)
-  x.fillStyle = '#c8181c';
-  x.font = 'bold italic 56px Helvetica, Arial, sans-serif';
-  x.fillText('NASA', 14, 78);
-  // US flag (simplified)
-  const flagX = 200, flagY = 28, flagW = 110, flagH = 60;
-  x.fillStyle = '#eeeeee';
+
+  // === NASA meatball logo (iconic blue circle with red swoosh) ===
+  const mbX = 60, mbY = 64, mbR = 44;
+  // Blue disc
+  x.fillStyle = '#0b3d91';
+  x.beginPath(); x.arc(mbX, mbY, mbR, 0, Math.PI * 2); x.fill();
+  // Small white stars across the blue
+  x.fillStyle = '#ffffff';
+  for (let i = 0; i < 6; i++) {
+    const sx = mbX - 30 + (i % 3) * 15;
+    const sy = mbY - 20 + Math.floor(i / 3) * 15;
+    x.beginPath(); x.arc(sx, sy, 1.2, 0, Math.PI * 2); x.fill();
+  }
+  // White NASA wordmark across the middle
+  x.fillStyle = '#ffffff';
+  x.font = 'bold 18px Helvetica, Arial, sans-serif';
+  x.textAlign = 'center';
+  x.fillText('NASA', mbX, mbY + 6);
+  x.textAlign = 'left';
+  // Red chevron sweep
+  x.strokeStyle = '#fc3d21';
+  x.lineWidth = 5;
+  x.beginPath();
+  x.moveTo(mbX - mbR * 0.85, mbY + mbR * 0.4);
+  x.bezierCurveTo(mbX - mbR * 0.2, mbY - mbR * 0.45, mbX + mbR * 0.2, mbY - mbR * 0.55, mbX + mbR * 0.85, mbY - mbR * 0.1);
+  x.stroke();
+  // White elliptical orbit ring
+  x.strokeStyle = '#ffffff';
+  x.lineWidth = 1.5;
+  x.beginPath();
+  x.ellipse(mbX, mbY, mbR * 0.78, mbR * 0.34, -0.4, 0, Math.PI * 2);
+  x.stroke();
+
+  // === US flag ===
+  const flagX = 140, flagY = 34, flagW = 86, flagH = 56;
+  x.fillStyle = '#ffffff';
   x.fillRect(flagX, flagY, flagW, flagH);
+  x.fillStyle = '#bc1c2b';
   for (let i = 0; i < 7; i++) {
-    if (i % 2 === 0) {
-      x.fillStyle = '#bc1c2b';
-      x.fillRect(flagX, flagY + i * flagH/7, flagW, flagH/7);
-    }
+    if (i % 2 === 0) x.fillRect(flagX, flagY + i * flagH / 7, flagW, flagH / 7);
   }
   x.fillStyle = '#162d8a';
-  x.fillRect(flagX, flagY, flagW * 0.4, flagH * 0.5);
-  // White stars (simplified dots)
-  x.fillStyle = '#fff';
-  for (let i = 0; i < 6; i++) {
+  x.fillRect(flagX, flagY, flagW * 0.4, flagH * 0.54);
+  x.fillStyle = '#ffffff';
+  for (let i = 0; i < 5; i++) {
     for (let j = 0; j < 3; j++) {
-      x.beginPath();
-      x.arc(flagX + 6 + i * 7, flagY + 6 + j * 8, 1.2, 0, Math.PI * 2);
-      x.fill();
+      x.beginPath(); x.arc(flagX + 5 + i * 6, flagY + 5 + j * 8, 1, 0, Math.PI * 2); x.fill();
     }
   }
-  // United States text
+  x.strokeStyle = '#666';
+  x.lineWidth = 1;
+  x.strokeRect(flagX, flagY, flagW, flagH);
+
+  // === Discovery name in classic large italic ===
   x.fillStyle = '#1a1a22';
-  x.font = 'bold 22px Helvetica, Arial, sans-serif';
-  x.fillText('United States', 318, 56);
-  // Discovery name
-  x.fillStyle = '#1a1a22';
-  x.font = 'bold italic 24px Helvetica, Arial, sans-serif';
-  x.fillText('Discovery', 332, 90);
+  x.font = 'bold italic 42px Helvetica, Arial, sans-serif';
+  x.fillText('Discovery', 244, 82);
+
   return new THREE.CanvasTexture(c);
 }
 
@@ -4599,6 +4624,22 @@ function animate() {
     }
     if (keys.KeyA && mt > -2) ship.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1),  dt * ROLL_RATE * 0.7));
     if (keys.KeyD && mt > -2) ship.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), -dt * ROLL_RATE * 0.7));
+
+    // === SHUTTLE ROLL PROGRAM (Discovery only) ===
+    // Real shuttle rolls ~180° around its long axis after liftoff to heads-down attitude.
+    // Smooth roll from T+4 to T+12 (8 seconds).
+    if (selectedShipType === 'discovery' && mt >= 4 && mt < 12) {
+      const rollRate = Math.PI / 8; // π over 8 seconds = 180° total
+      const rollQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), rollRate * dt);
+      ship.quaternion.multiply(rollQuat);
+    }
+    // === ARTEMIS GENTLE YAW DRIFT ===
+    // SLS also performs a roll/yaw maneuver; small constant rate for visual interest.
+    if (selectedShipType === 'artemis' && mt >= 4 && mt < 14) {
+      const rollRate = Math.PI / 12;
+      const rollQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), rollRate * dt);
+      ship.quaternion.multiply(rollQuat);
+    }
 
     // ===== AUTO-PITCH: rocket gradually rotates toward target attitude =====
     // This makes the pitch-over visibly happen even if the player isn't actively steering.
