@@ -1480,8 +1480,10 @@ function buildISS() {
   return iss;
 }
 
+const ENABLE_ISS = false;
 const iss = buildISS();
-scene.add(iss);
+if (ENABLE_ISS) scene.add(iss);
+else iss.visible = false;
 const discoveryShip = buildDiscoveryShip();
 const artemisShip = buildArtemisShip();
 scene.add(discoveryShip);
@@ -1603,7 +1605,7 @@ function buildISSInterior() {
   return g;
 }
 const issInterior = buildISSInterior();
-scene.add(issInterior);
+if (ENABLE_ISS) scene.add(issInterior);
 let issInsideMode = false;
 const issWalkPos = new THREE.Vector3(0, 0.3, 0);
 let issWalkYaw = 0, issWalkPitch = 0;
@@ -4156,7 +4158,7 @@ window.addEventListener('keydown', e => {
   if (e.code === 'KeyH') handleHotClick();
   // G toggles walk-around-inside-ship OR exits ISS interior
   if (e.code === 'KeyG' && gamePhase === 'play') {
-    if (issInsideMode) {
+    if (ENABLE_ISS && issInsideMode) {
       // Exit ISS — back to ship
       issInsideMode = false;
       issInterior.visible = false;
@@ -4445,7 +4447,7 @@ function loadDiscoveryStackFromParts() {
     });
 
     tank.position.set(0, 0, 0);
-    const boosterX = 3.05;
+    const boosterX = 2.55;
     const boosterZ = 0.45;
     srbA.position.set(-boosterX, 0, boosterZ);
     srbB.position.set(boosterX, 0, boosterZ);
@@ -4468,20 +4470,44 @@ function loadDiscoveryStackFromParts() {
     const stackRoll = Math.atan2(45, 38);
     stack.rotation.z = stackRoll;
     ship.add(stack);
-    const baseEngineLayout = [
-      { x: -boosterX, y: 0, z: 9.05, height: 4.6, particleZ: 9.18 },
-      { x: boosterX, y: 0, z: 9.05, height: 4.6, particleZ: 9.18 },
+    ship.updateMatrixWorld(true);
+    stack.updateMatrixWorld(true);
+    const getShipLocalBounds = (obj) => {
+      obj.updateMatrixWorld(true);
+      const worldBox = new THREE.Box3().setFromObject(obj);
+      const shipInv = new THREE.Matrix4().copy(ship.matrixWorld).invert();
+      const localBox = new THREE.Box3();
+      for (const x of [worldBox.min.x, worldBox.max.x]) {
+        for (const y of [worldBox.min.y, worldBox.max.y]) {
+          for (const z of [worldBox.min.z, worldBox.max.z]) {
+            localBox.expandByPoint(new THREE.Vector3(x, y, z).applyMatrix4(shipInv));
+          }
+        }
+      }
+      return localBox;
+    };
+    const srbABounds = getShipLocalBounds(srbA);
+    const srbBBounds = getShipLocalBounds(srbB);
+    const srbAExit = srbABounds.getCenter(new THREE.Vector3());
+    const srbBExit = srbBBounds.getCenter(new THREE.Vector3());
+    srbAExit.z = srbABounds.max.z - 0.08;
+    srbBExit.z = srbBBounds.max.z - 0.08;
+    const cosRoll = Math.cos(stackRoll);
+    const sinRoll = Math.sin(stackRoll);
+    const orbiterEngineLayout = [
       { x: -0.62, y: orbiterY, z: 8.0, height: 2.5, particleZ: 8.35 },
       { x: 0.62, y: orbiterY, z: 8.0, height: 2.5, particleZ: 8.35 },
       { x: 0, y: orbiterY + 0.42, z: 7.82, height: 2.5, particleZ: 8.15 },
-    ];
-    const cosRoll = Math.cos(stackRoll);
-    const sinRoll = Math.sin(stackRoll);
-    const engineLayout = baseEngineLayout.map((p) => ({
+    ].map((p) => ({
       ...p,
       x: p.x * cosRoll - p.y * sinRoll,
       y: p.x * sinRoll + p.y * cosRoll,
     }));
+    const engineLayout = [
+      { x: srbAExit.x, y: srbAExit.y, z: srbAExit.z, height: 4.6, particleZ: srbAExit.z + 0.13 },
+      { x: srbBExit.x, y: srbBExit.y, z: srbBExit.z, height: 4.6, particleZ: srbBExit.z + 0.13 },
+      ...orbiterEngineLayout,
+    ];
     adoptRealModel(stack, engineLayout);
     leftBooster = srbA;
     rightBooster = srbB;
@@ -4808,17 +4834,19 @@ function animate() {
   // Film grain time
   grainPass.uniforms.time.value = t;
 
-  // ISS orbital motion around Earth
-  issAngle += dt * 0.35;
   const earthPos = earthPlanet.group.position;
-  iss.position.set(
-    earthPos.x + Math.cos(issAngle) * ISS_ORBIT_R,
-    earthPos.y + Math.sin(issAngle * 0.7) * ISS_ORBIT_R * ISS_ORBIT_TILT,
-    earthPos.z + Math.sin(issAngle) * ISS_ORBIT_R
-  );
-  // Orient along orbit direction
-  const issForwardDir = new THREE.Vector3(-Math.sin(issAngle), 0, Math.cos(issAngle));
-  iss.lookAt(iss.position.clone().add(issForwardDir));
+  if (ENABLE_ISS) {
+    // ISS orbital motion around Earth
+    issAngle += dt * 0.35;
+    iss.position.set(
+      earthPos.x + Math.cos(issAngle) * ISS_ORBIT_R,
+      earthPos.y + Math.sin(issAngle * 0.7) * ISS_ORBIT_R * ISS_ORBIT_TILT,
+      earthPos.z + Math.sin(issAngle) * ISS_ORBIT_R
+    );
+    // Orient along orbit direction
+    const issForwardDir = new THREE.Vector3(-Math.sin(issAngle), 0, Math.cos(issAngle));
+    iss.lookAt(iss.position.clone().add(issForwardDir));
+  }
 
   discoveryAngle += dt * 0.18;
   discoveryShip.position.set(
@@ -4842,7 +4870,7 @@ function animate() {
   );
   artemisShip.lookAt(moonWorld);
   // Keep interior glued to the ISS so player walks around in it as the station orbits
-  if (issInsideMode) {
+  if (ENABLE_ISS && issInsideMode) {
     issInterior.position.copy(iss.position);
     const dirToEarth = LAUNCH_EARTH_POS.clone().sub(iss.position).normalize();
     issInterior.lookAt(iss.position.clone().add(dirToEarth));
@@ -4929,7 +4957,7 @@ function animate() {
     }
   }
 
-  if (gamePhase === 'play' && !issDocked) {
+  if (ENABLE_ISS && gamePhase === 'play' && !issDocked) {
     const dDist = ship.position.distanceTo(iss.position);
     if (dDist < 120) { // very generous docking radius (was 60)
       issDocked = true;
@@ -4951,7 +4979,7 @@ function animate() {
     }
   }
   // ISS direction marker — visible cyan orb pointing at ISS
-  if (gamePhase === 'play' && !issDocked && !walkMode) {
+  if (ENABLE_ISS && gamePhase === 'play' && !issDocked && !walkMode) {
     const dirToISS = iss.position.clone().sub(ship.position);
     const issDistTo = dirToISS.length();
     if (issDistTo > 40) {
@@ -5352,6 +5380,12 @@ function animate() {
     // ===== End of launch — drop into stable orbit at ISS altitude =====
     if (launchTimer >= LAUNCH_DURATION) {
       gamePhase = 'play';
+      cameraMode = 0;
+      cockpitFrame.classList.remove('active');
+      issInsideMode = false;
+      walkMode = false;
+      interior.visible = false;
+      if (issInterior) issInterior.visible = false;
       pendingPitch = 0;
       pendingYaw = 0;
       stress = 0;
@@ -5710,7 +5744,7 @@ function animate() {
       camera.fov += (targetFOV - camera.fov) * 0.08;
       camera.updateProjectionMatrix();
     }
-  } else if (issInsideMode && gamePhase === 'play') {
+  } else if (ENABLE_ISS && issInsideMode && gamePhase === 'play') {
     // ISS INTERIOR — walk inside the space station
     // Mouse looks around
     if (pointerLocked) {
@@ -5820,7 +5854,7 @@ function animate() {
   for (const p of planets) {
     if (p.config.name !== 'Earth') p.group.visible = !inAtmosphere;
   }
-  iss.visible = !inAtmosphere;
+  iss.visible = ENABLE_ISS && !inAtmosphere;
   asteroids.visible = !inAtmosphere;
   stars.visible = !inAtmosphere;
   sky.visible = !inAtmosphere;
