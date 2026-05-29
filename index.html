@@ -1605,6 +1605,46 @@ const ISS_ORBIT_TILT = 0.45;
 // =============================================================
 // HAIL MARY — procedural textures
 // =============================================================
+// === REAL-LOOKING FLAME TEXTURE ===
+// Vertical gradient (bright white core fading to orange edges) + flicker streaks
+function makeFlameTexture() {
+  const c = document.createElement('canvas');
+  c.width = 256; c.height = 512;
+  const ctx = c.getContext('2d');
+  // Vertical gradient — wide white-yellow at the base, fades to orange and transparent at tip
+  const grad = ctx.createLinearGradient(0, 512, 0, 0);
+  grad.addColorStop(0.0,  'rgba(255, 255, 240, 1.0)'); // base: bright white
+  grad.addColorStop(0.15, 'rgba(255, 240, 180, 0.95)'); // hot yellow
+  grad.addColorStop(0.40, 'rgba(255, 170, 70, 0.7)');  // orange
+  grad.addColorStop(0.70, 'rgba(255, 80, 30, 0.3)');   // dim orange
+  grad.addColorStop(1.0,  'rgba(255, 50, 10, 0)');     // tip: transparent
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, c.width, c.height);
+  // Vertical flame streaks (random hot lines for flicker)
+  for (let i = 0; i < 28; i++) {
+    const x = Math.random() * c.width;
+    const w = 2 + Math.random() * 8;
+    const a = 0.08 + Math.random() * 0.25;
+    const ystart = Math.random() * c.height * 0.6;
+    ctx.fillStyle = `rgba(255, 240, 200, ${a})`;
+    ctx.fillRect(x, ystart, w, c.height - ystart);
+  }
+  // Horizontal radial fade so edges of the cone don't show hard texture seam
+  const edgeGrad = ctx.createLinearGradient(0, 0, c.width, 0);
+  edgeGrad.addColorStop(0,   'rgba(0,0,0,0.6)');
+  edgeGrad.addColorStop(0.5, 'rgba(0,0,0,0)');
+  edgeGrad.addColorStop(1,   'rgba(0,0,0,0.6)');
+  ctx.globalCompositeOperation = 'destination-out';
+  ctx.fillStyle = edgeGrad;
+  ctx.fillRect(0, 0, c.width, c.height);
+  ctx.globalCompositeOperation = 'source-over';
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = THREE.ClampToEdgeWrapping;
+  tex.wrapT = THREE.ClampToEdgeWrapping;
+  return tex;
+}
+const FLAME_TEXTURE = makeFlameTexture();
+
 function makeTankTexture() {
   const c = document.createElement('canvas');
   c.width = 512; c.height = 1024;
