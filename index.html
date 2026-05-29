@@ -708,6 +708,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 // =============================================================
 // RENDERER + SCENE
@@ -4114,6 +4115,36 @@ function beginLaunchSequence(lockPointer = true) {
   stressHud.classList.add('show');
 }
 
+// === GLB MODEL LOADER ===
+// If you drop a real NASA .glb file into models/<shiptype>.glb (next to index.html),
+// the game will replace the procedural ship with that model.
+// Files supported: models/hail-mary.glb, models/discovery.glb, models/artemis.glb
+const gltfLoader = new GLTFLoader();
+const GLB_SCALE = { 'hail-mary': 1.0, 'discovery': 0.5, 'artemis': 0.4 };
+function tryLoadRealModel(shipType) {
+  const url = `./models/${shipType}.glb`;
+  gltfLoader.load(
+    url,
+    (gltf) => {
+      console.log('[Stellar Drift] Loaded real model for', shipType);
+      // Hide all procedural ship children
+      for (const child of ship.children) child.visible = false;
+      const model = gltf.scene;
+      const s = GLB_SCALE[shipType] || 1.0;
+      model.scale.set(s, s, s);
+      // Center model — some GLBs have offset origins
+      const box = new THREE.Box3().setFromObject(model);
+      const center = box.getCenter(new THREE.Vector3());
+      model.position.sub(center);
+      ship.add(model);
+    },
+    undefined,
+    (err) => {
+      console.log('[Stellar Drift] No real model at', url, '(using procedural)');
+    }
+  );
+}
+
 // === Ship picker wiring ===
 const SHIP_STORAGE_KEY = 'stellarDriftShip';
 const selectedShipType = localStorage.getItem(SHIP_STORAGE_KEY) || 'hail-mary';
@@ -4140,6 +4171,8 @@ const shipStats = SHIP_STATS[selectedShipType] || SHIP_STATS['hail-mary'];
 
 // Build alternate ship model if selected
 if (selectedShipType === 'discovery') buildDiscovery();
+// After procedural is built, try to load a real GLB model if user has one
+tryLoadRealModel(selectedShipType);
 else if (selectedShipType === 'artemis') buildArtemis();
 
 intro.addEventListener('click', () => beginLaunchSequence(true));
