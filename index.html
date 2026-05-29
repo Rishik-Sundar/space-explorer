@@ -709,6 +709,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 
 // =============================================================
 // RENDERER + SCENE
@@ -4151,34 +4152,50 @@ function beginLaunchSequence(lockPointer = true) {
 // Files supported: models/hail-mary.glb, models/discovery.glb, models/artemis.glb
 const gltfLoader = new GLTFLoader();
 const GLB_SCALE = { 'discovery': 0.5, 'artemis': 0.4 };
-// Load a model, auto-scale to targetH (longest axis), center, and orient so
-// its longest axis is along the ship's local Z (the launch up/down axis).
+const stlLoader = new STLLoader();
+
+// Auto-orient + scale + position a loaded model (GLB or STL)
+function orientPlace(m, targetH, posOffset) {
+  let box = new THREE.Box3().setFromObject(m);
+  const size = box.getSize(new THREE.Vector3());
+  const longest = Math.max(size.x, size.y, size.z);
+  const scale = targetH / longest;
+  m.scale.set(scale, scale, scale);
+  box = new THREE.Box3().setFromObject(m);
+  const center = box.getCenter(new THREE.Vector3());
+  m.position.sub(center);
+  if (size.y === longest) m.rotation.x = Math.PI / 2;
+  else if (size.x === longest) m.rotation.y = -Math.PI / 2;
+  m.position.add(posOffset);
+}
+
+// Load GLB or STL based on extension. Wraps STL geometry in a Mesh with default material.
 function loadAndOrient(url, targetH, posOffset, onLoad) {
-  gltfLoader.load(url, (gltf) => {
-    const m = gltf.scene;
-    let box = new THREE.Box3().setFromObject(m);
-    const size = box.getSize(new THREE.Vector3());
-    const longest = Math.max(size.x, size.y, size.z);
-    const scale = targetH / longest;
-    m.scale.set(scale, scale, scale);
-    // Re-bound after scale
-    box = new THREE.Box3().setFromObject(m);
-    const center = box.getCenter(new THREE.Vector3());
-    m.position.sub(center);
-    // Orient so the longest dimension lies along ship +Z (launch axis)
-    if (size.y === longest) {
-      m.rotation.x = Math.PI / 2;       // model's Y → ship's Z
-    } else if (size.x === longest) {
-      m.rotation.y = -Math.PI / 2;      // model's X → ship's Z
+  const isSTL = url.toLowerCase().endsWith('.stl');
+  try {
+    if (isSTL) {
+      stlLoader.load(url, (geom) => {
+        const mat = new THREE.MeshStandardMaterial({
+          color: 0xc8c8c8, metalness: 0.4, roughness: 0.55, flatShading: false
+        });
+        const m = new THREE.Mesh(geom, mat);
+        orientPlace(m, targetH, posOffset);
+        ship.add(m);
+        if (onLoad) onLoad(m);
+        console.log('[Stellar Drift] Loaded STL part:', url);
+      }, undefined, () => console.log('[Stellar Drift] STL not loaded:', url));
+    } else {
+      gltfLoader.load(url, (gltf) => {
+        const m = gltf.scene;
+        orientPlace(m, targetH, posOffset);
+        ship.add(m);
+        if (onLoad) onLoad(m);
+        console.log('[Stellar Drift] Loaded GLB part:', url);
+      }, undefined, () => console.log('[Stellar Drift] GLB not loaded:', url));
     }
-    // Apply position offset (in ship local frame)
-    m.position.add(posOffset);
-    ship.add(m);
-    onLoad && onLoad(m);
-    console.log('[Stellar Drift] Loaded part:', url);
-  }, undefined, (err) => {
-    console.log('[Stellar Drift] Part not loaded:', url);
-  });
+  } catch (e) {
+    console.warn('[Stellar Drift] Model load error:', url, e);
+  }
 }
 
 function tryLoadRealModel(shipType) {
@@ -4194,24 +4211,24 @@ function tryLoadRealModel(shipType) {
     loadAndOrient('./models/orbiter.glb',        9, new THREE.Vector3(0, 2.5, 0.8));
     return;
   }
-  // Other ships: single .glb model
-  const url = `./models/${shipType}.glb`;
-  gltfLoader.load(
-    url,
-    (gltf) => {
-      console.log('[Stellar Drift] Loaded real model for', shipType);
+  // Artemis: try .glb first, fall back to .stl
+  if (shipType === 'artemis') {
+    // Try GLB
+    fetch('./models/artemis.glb', { method: 'HEAD' }).then(r => {
+      if (r.ok) {
+        for (const child of ship.children) child.visible = false;
+        loadAndOrient('./models/artemis.glb', 24, new THREE.Vector3(0, 0, 0));
+      } else {
+        // Fall back to STL
+        for (const child of ship.children) child.visible = false;
+        loadAndOrient('./models/artemis.stl', 24, new THREE.Vector3(0, 0, 0));
+      }
+    }).catch(() => {
       for (const child of ship.children) child.visible = false;
-      const model = gltf.scene;
-      const s = GLB_SCALE[shipType] || 1.0;
-      model.scale.set(s, s, s);
-      const box = new THREE.Box3().setFromObject(model);
-      const center = box.getCenter(new THREE.Vector3());
-      model.position.sub(center);
-      ship.add(model);
-    },
-    undefined,
-    () => { console.log('[Stellar Drift] No real model at', url, '(using procedural)'); }
-  );
+      loadAndOrient('./models/artemis.stl', 24, new THREE.Vector3(0, 0, 0));
+    });
+    return;
+  }
 }
 
 // === Ship picker wiring ===
