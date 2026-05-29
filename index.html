@@ -2819,23 +2819,33 @@ function buildDiscovery() {
   lox.position.z = -tankLen * 0.45 - 0.5;
   ship.add(lox);
 
-  // Ogive top
+  // === Proper ogive bullet nose on the EXTERNAL TANK ===
+  // Full hemisphere, rotated so dome points -Z (forward / ship nose direction)
+  const loxTopZ = -tankLen * 0.45 - 0.5 - tankLen * 0.35 / 2;
   const tankTop = new THREE.Mesh(
-    new THREE.SphereGeometry(tankRad, 24, 16, 0, Math.PI * 2, 0, Math.PI * 0.45),
+    new THREE.SphereGeometry(tankRad, 36, 20, 0, Math.PI * 2, 0, Math.PI / 2),
     tankMat
   );
-  tankTop.rotation.x = Math.PI / 2;
-  tankTop.scale.z = 1.4;
-  tankTop.position.z = -tankLen * 0.62 - 0.5;
+  tankTop.rotation.x = -Math.PI / 2; // dome points -Z (forward)
+  tankTop.scale.z = 1.5; // elongate into proper ogive shape
+  tankTop.position.z = loxTopZ; // flat face flush against LOX tank top
   ship.add(tankTop);
-  // Tip cap
+  // LO2 safety-valve spike at the very tip (small white rod)
   const tankTip = new THREE.Mesh(
-    new THREE.ConeGeometry(0.18, 0.5, 12),
-    new THREE.MeshStandardMaterial({ color: 0x808890, metalness: 0.6, roughness: 0.4 })
+    new THREE.CylinderGeometry(0.06, 0.06, 0.7, 10),
+    new THREE.MeshStandardMaterial({ color: 0xdcdce0, metalness: 0.5, roughness: 0.4 })
   );
-  tankTip.rotation.x = -Math.PI / 2;
-  tankTip.position.z = -tankLen * 0.62 - 1.5 - 0.25;
+  tankTip.rotation.x = Math.PI / 2;
+  tankTip.position.z = loxTopZ - tankRad * 1.5 - 0.35;
   ship.add(tankTip);
+  // Tip cap
+  const tankCap = new THREE.Mesh(
+    new THREE.ConeGeometry(0.08, 0.2, 10),
+    new THREE.MeshStandardMaterial({ color: 0x444444, metalness: 0.7 })
+  );
+  tankCap.rotation.x = -Math.PI / 2;
+  tankCap.position.z = loxTopZ - tankRad * 1.5 - 0.8;
+  ship.add(tankCap);
 
   // Tank bottom dome
   const tankBot = new THREE.Mesh(
