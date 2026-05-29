@@ -4459,7 +4459,9 @@ function loadDiscoveryStackFromParts() {
     stack.add(makeDiscoveryAttachStrut(-1.15, 1.22, 4.9, 2.5, 0.06));
     stack.add(makeDiscoveryAttachStrut(1.15, 1.22, 4.9, 2.5, 0.06));
 
-    const stackRoll = Math.PI / 2;
+    // Aim the orbiter side toward the default launch camera. The camera sits at
+    // roughly local (-45, +38), so this roll keeps Discovery readable during liftoff.
+    const stackRoll = Math.atan2(45, 38);
     stack.rotation.z = stackRoll;
     ship.add(stack);
     const baseEngineLayout = [
@@ -5252,10 +5254,10 @@ function animate() {
     if (keys.KeyD && mt > -2) ship.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), -dt * ROLL_RATE * 0.7));
 
     // === SHUTTLE ROLL PROGRAM (Discovery only) ===
-    // Real shuttle rolls ~180° around its long axis after liftoff to heads-down attitude.
-    // Smooth roll from T+4 to T+12 (8 seconds).
-    if (selectedShipType === 'discovery' && mt >= 4 && mt < 12) {
-      const rollRate = Math.PI / 8; // π over 8 seconds = 180° total
+    // Delay the roll program so the shuttle stack stays readable during the
+    // close launch view; otherwise the orbiter rotates away almost immediately.
+    if (selectedShipType === 'discovery' && mt >= 35 && mt < 51) {
+      const rollRate = Math.PI / 16; // π over 16 seconds = 180° total
       const rollQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), rollRate * dt);
       ship.quaternion.multiply(rollQuat);
     }
