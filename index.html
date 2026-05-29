@@ -4120,8 +4120,11 @@ function beginLaunchSequence(lockPointer = true) {
 // the game will replace the procedural ship with that model.
 // Files supported: models/hail-mary.glb, models/discovery.glb, models/artemis.glb
 const gltfLoader = new GLTFLoader();
-const GLB_SCALE = { 'hail-mary': 1.0, 'discovery': 0.5, 'artemis': 0.4 };
+const GLB_SCALE = { 'discovery': 0.5, 'artemis': 0.4 };
 function tryLoadRealModel(shipType) {
+  // Hail Mary is fictional (Project Hail Mary novel) — no real NASA model exists.
+  // Keep the procedural Hail Mary ship.
+  if (shipType === 'hail-mary') return;
   const url = `./models/${shipType}.glb`;
   gltfLoader.load(
     url,

@@ -2,9 +2,10 @@
 
 Drop NASA / Sketchfab `.glb` files here to replace the procedural ships:
 
-- `hail-mary.glb` — fictional Hail Mary spacecraft
 - `discovery.glb` — Space Shuttle Discovery (orbiter + ET + SRBs stack)
 - `artemis.glb` — SLS + Orion stack
+
+**Note:** Hail Mary is fictional (from the Project Hail Mary novel) — no real model exists, so the procedural Hail Mary is always used.
 
 ## Where to get models
 
