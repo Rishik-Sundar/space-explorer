@@ -4439,7 +4439,10 @@ function loadDiscoveryStackFromParts() {
     const tank = prepareRealModelPart(tankModel, tankLength);
     const srbA = prepareRealModelPart(srbModel, srbLength);
     const srbB = srbA.clone(true);
-    const orbiter = prepareRealModelPart(orbiterModel, orbiterLength, { y: Math.PI });
+    const orbiter = prepareRealModelPart(orbiterModel, orbiterLength, {
+      x: -Math.PI / 2,
+      y: Math.PI
+    });
 
     tank.position.set(0, 0, 0);
     const boosterX = 3.05;
@@ -4447,8 +4450,9 @@ function loadDiscoveryStackFromParts() {
     srbA.position.set(-boosterX, 0, boosterZ);
     srbB.position.set(boosterX, 0, boosterZ);
 
-    // The orbiter GLB is authored tail-first relative to the game's ship axis.
-    // The 180 degree yaw above points the nose toward the tank/booster noses.
+    // The orbiter GLB is authored tail-first and with its belly axis sideways.
+    // Yaw points the nose up with the stack; roll turns the black heat shield
+    // inward toward the ET and the white/top side outward.
     const orbiterY = 2.35;
     const orbiterZ = 0.95;
     orbiter.position.set(0, orbiterY, orbiterZ);
