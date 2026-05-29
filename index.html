@@ -3213,6 +3213,9 @@ function buildArtemis() {
   // === 4 RS-25 main engines at bottom of core ===
   const coreEngines = makeEngineCluster(0, 0, coreLen / 2 + 1.4, 4, 0.42, 1.5);
   ship.add(coreEngines);
+
+  // Lift ship up so the tall SLS engine bell sits above the launch pad
+  ship.position.y = LAUNCH_EARTH_POS.y + earthPlanet.config.radius + 15;
 }
 
 // === SHIP INTERIOR (walk-around mode in orbit) ===
