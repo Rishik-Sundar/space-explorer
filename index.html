@@ -2584,13 +2584,13 @@ function clearShipModel() {
   enginePositionsLocal.length = 0;
 }
 
-function makeEngineCluster(x, y, z, numEngines, radius = 0.45, length = 1.3) {
+function makeEngineCluster(x, y, z, numEngines, radius = 0.45, length = 1.3, startAng = 0, clusterR = 0.6) {
   const cluster = new THREE.Group();
   const housingMat = new THREE.MeshStandardMaterial({ color: 0x2c2e34, metalness: 0.9, roughness: 0.4 });
   const bellMat = new THREE.MeshStandardMaterial({ color: 0x1f2126, metalness: 0.92, roughness: 0.3 });
   for (let i = 0; i < numEngines; i++) {
-    const ang = (i / numEngines) * Math.PI * 2;
-    const r = numEngines > 1 ? 0.6 : 0;
+    const ang = startAng + (i / numEngines) * Math.PI * 2;
+    const r = numEngines > 1 ? clusterR : 0;
     const ex = Math.cos(ang) * r;
     const ey = Math.sin(ang) * r;
     // Housing
@@ -2931,18 +2931,42 @@ function buildDiscovery() {
   tail.position.set(-0.05, 0.4, 1.5);
   tail.rotation.y = Math.PI / 2;
   orbiter.add(tail);
-  // OMS pods at rear (two bumps)
+  // OMS pods at rear — bigger, more visible (rounded white pods at the back)
   for (const side of [-1, 1]) {
-    const oms = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.18, 0.25, 1.2, 16),
+    const omsBody = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.32, 0.38, 1.5, 18),
       new THREE.MeshStandardMaterial({ color: 0xeceef0, metalness: 0.4, roughness: 0.5 })
     );
-    oms.rotation.x = Math.PI / 2;
-    oms.position.set(side * 0.5, 0.4, 2.8);
-    orbiter.add(oms);
+    omsBody.rotation.x = Math.PI / 2;
+    omsBody.position.set(side * 0.65, 0.45, 2.5);
+    orbiter.add(omsBody);
+    // OMS nose cap (rounded front)
+    const omsNose = new THREE.Mesh(
+      new THREE.SphereGeometry(0.32, 16, 12, 0, Math.PI * 2, 0, Math.PI / 2),
+      new THREE.MeshStandardMaterial({ color: 0xeceef0, metalness: 0.4, roughness: 0.5 })
+    );
+    omsNose.rotation.x = -Math.PI / 2;
+    omsNose.position.set(side * 0.65, 0.45, 1.75);
+    orbiter.add(omsNose);
+    // OMS engine nozzle at the back of each pod
+    const omsEng = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.10, 0.16, 0.4, 14),
+      new THREE.MeshStandardMaterial({ color: 0x1f2126, metalness: 0.92, roughness: 0.3 })
+    );
+    omsEng.rotation.x = Math.PI / 2;
+    omsEng.position.set(side * 0.65, 0.35, 3.45);
+    orbiter.add(omsEng);
   }
-  // 3 SSME main engines at rear (clustered triangle)
-  const orbEngines = makeEngineCluster(0, 0, 3.2, 3, 0.34, 1.1);
+  // Body flap (dark panel below the main engines)
+  const bodyFlap = new THREE.Mesh(
+    new THREE.BoxGeometry(1.6, 0.15, 1.0),
+    new THREE.MeshStandardMaterial({ color: 0x1a1e22, metalness: 0.3, roughness: 0.7 })
+  );
+  bodyFlap.position.set(0, -0.65, 3.2);
+  orbiter.add(bodyFlap);
+  // 3 SSME main engines in iconic triangle (one TOP, two BOTTOM) — bigger so they're prominent
+  // startAng = -π/2 makes first engine at +Y (top). 2nd at +Y+2π/3, 3rd at +Y+4π/3.
+  const orbEngines = makeEngineCluster(0, 0, 3.4, 3, 0.42, 1.3, -Math.PI / 2, 0.5);
   orbiter.add(orbEngines);
 
   // Position orbiter beside tank, with black belly facing tank (toward -X)
