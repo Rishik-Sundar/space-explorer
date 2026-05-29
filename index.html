@@ -3996,17 +3996,34 @@ function explodeShip(title = 'STRUCTURAL FAILURE', message = 'The vehicle has br
 // Jettison everything except the tagged capsule group (called at orbital insertion)
 function jettisonToCapsule() {
   let capsule = null;
-  for (const child of ship.children) {
-    if (child.userData && child.userData.isCapsule) { capsule = child; break; }
-  }
+  ship.traverse((child) => {
+    if (!capsule && child.userData && child.userData.isCapsule) capsule = child;
+  });
   if (!capsule) return; // no capsule defined (Hail Mary) — skip
   // Save capsule's world transform so the visual doesn't jump
   const capWorld = new THREE.Vector3();
   capsule.getWorldPosition(capWorld);
   const capQuat = new THREE.Quaternion();
   capsule.getWorldQuaternion(capQuat);
+  if (capsule.parent !== ship) {
+    ship.attach(capsule);
+  }
+  const capsuleEngineParts = new Set();
+  if (capsule.userData.capsuleEngines) {
+    for (const eng of capsule.userData.capsuleEngines) {
+      if (eng.glow) {
+        capsuleEngineParts.add(eng.glow);
+        if (eng.glow.parent !== capsule) capsule.attach(eng.glow);
+      }
+      if (eng.plume) {
+        capsuleEngineParts.add(eng.plume);
+        if (eng.plume.parent !== capsule) capsule.attach(eng.plume);
+      }
+    }
+  }
   // Jettison every non-capsule child as drifting debris
-  const toJettison = ship.children.filter(c => c !== capsule);
+  const sharedShipChildren = new Set([shipLight, shipLight2, heatShieldVisuals]);
+  const toJettison = ship.children.filter(c => c !== capsule && !sharedShipChildren.has(c) && !capsuleEngineParts.has(c));
   for (const part of toJettison) {
     const wp = new THREE.Vector3();
     part.getWorldPosition(wp);
@@ -4051,16 +4068,19 @@ function separateBoosters() {
   for (const item of [[leftBooster, 1], [rightBooster, -1]]) {
     const booster = item[0];
     const side = item[1];
+    if (!booster || !booster.parent) continue;
     const worldPos = new THREE.Vector3();
     const worldQuat = new THREE.Quaternion();
     booster.getWorldPosition(worldPos);
     booster.getWorldQuaternion(worldQuat);
-    ship.remove(booster);
+    booster.parent.remove(booster);
     scene.add(booster);
     booster.position.copy(worldPos);
     booster.quaternion.copy(worldQuat);
     // Push outward + slight rotation
-    const outward = new THREE.Vector3(side, 0, 0).applyQuaternion(ship.quaternion);
+    const outward = worldPos.clone().sub(ship.position);
+    if (outward.lengthSq() < 0.0001) outward.set(side, 0, 0).applyQuaternion(ship.quaternion);
+    else outward.normalize();
     const debrisVel = velocity.clone().addScaledVector(outward, 14);
     separatedDebris.push({
       mesh: booster,
@@ -4072,9 +4092,9 @@ function separateBoosters() {
       ),
       life: 60
     });
-    booster.userData.glowDisc.material.opacity = 0;
-    const bpm = booster.userData.plume.material;
-    if (bpm.uniforms) bpm.uniforms.uOpacity.value = 0; else bpm.opacity = 0;
+    if (booster.userData.glowDisc) booster.userData.glowDisc.material.opacity = 0;
+    const bpm = booster.userData.plume && booster.userData.plume.material;
+    if (bpm && bpm.uniforms) bpm.uniforms.uOpacity.value = 0; else if (bpm) bpm.opacity = 0;
   }
   // Remove booster engines from active engine list
   const boosterEngineStart = selectedShipType === 'discovery' ? 0 : 3;
@@ -4433,7 +4453,7 @@ function loadDiscoveryStackFromParts() {
     // The orbiter GLB is authored tail-first relative to the game's ship axis.
     // The 180 degree yaw above points the nose toward the tank/booster noses,
     // then the roll puts the wings across the shuttle stack.
-    const orbiterY = 2.62;
+    const orbiterY = 3.45;
     const orbiterZ = 0.95;
     orbiter.position.set(0, orbiterY, orbiterZ);
 
@@ -4461,6 +4481,20 @@ function loadDiscoveryStackFromParts() {
       y: p.x * sinRoll + p.y * cosRoll,
     }));
     adoptRealModel(stack, engineLayout);
+    leftBooster = srbA;
+    rightBooster = srbB;
+    leftBooster.userData.glowDisc = engineGlows[0];
+    leftBooster.userData.plume = enginePlumes[0];
+    rightBooster.userData.glowDisc = engineGlows[1];
+    rightBooster.userData.plume = enginePlumes[1];
+    orbiter.userData.isCapsule = true;
+    orbiter.userData.capsuleEngines = [2, 3, 4].map((idx) => ({
+      glow: engineGlows[idx],
+      plume: enginePlumes[idx],
+      localPos: engineLayout[idx].particleZ === undefined
+        ? new THREE.Vector3(engineLayout[idx].x, engineLayout[idx].y, engineLayout[idx].z)
+        : new THREE.Vector3(engineLayout[idx].x, engineLayout[idx].y, engineLayout[idx].particleZ)
+    }));
     console.log('[Stellar Drift] Loaded Discovery stack from orbiter/tank/SRB GLBs');
   }).catch((err) => {
     console.warn('[Stellar Drift] Failed to assemble Discovery GLBs; falling back to combined model:', err);
