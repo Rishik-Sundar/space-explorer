@@ -2988,10 +2988,10 @@ function buildDiscovery() {
   decalPanel2.rotation.z = Math.PI;
   orbiter.add(decalPanel2);
 
-  // Move orbiter to the CAMERA side of the tank (-X) so the iconic black-belly shuttle is visible
-  orbiter.position.set(-(tankRad + 0.85), 0, 0.6);
-  orbiter.rotation.z = Math.PI / 2; // belly faces camera (-X direction)
-  orbiter.scale.set(1.25, 1.25, 1.25); // make orbiter clearly bigger so it doesn't look like Artemis
+  // Position orbiter perpendicular to the SRBs (on +Y side of tank, which maps to world +Z
+  // — toward camera — after ship rotation). No Z rotation needed; orbiter axis already
+  // aligns with ship axis. Belly (orbiter +Y) faces further +Y = away from tank = toward camera.
+  orbiter.position.set(0, tankRad + 0.85, 0.6);
   // Tag as capsule — this is what stays after stage separation
   orbiter.userData.isCapsule = true;
   orbiter.userData.capsuleEngines = [{
@@ -3009,13 +3009,13 @@ function buildDiscovery() {
   }];
   ship.add(orbiter);
 
-  // Forward attach struts (two short bars from orbiter to tank, on -X side now)
+  // Forward attach struts (two short bars from orbiter to tank, now on +Y side)
   for (const sz of [-1.5, 1.8]) {
     const strut = new THREE.Mesh(
-      new THREE.BoxGeometry(1.0, 0.12, 0.12),
+      new THREE.BoxGeometry(0.12, 1.0, 0.12),
       new THREE.MeshStandardMaterial({ color: 0x808890, metalness: 0.7, roughness: 0.5 })
     );
-    strut.position.set(-(tankRad + 0.4), 0, sz);
+    strut.position.set(0, tankRad + 0.4, sz);
     ship.add(strut);
   }
 }
@@ -3226,12 +3226,14 @@ function buildArtemis() {
   ship.add(orionGroup);
 
   // === Launch Abort System (LAS) - red tower with motor cone ===
+  // Position is relative to the crew module's world Z (orionCenterZ + cmLocalZ)
+  const cmShipZ = orionCenterZ + cmLocalZ;
   const lasBase = new THREE.Mesh(
     new THREE.CylinderGeometry(0.45, 0.45, 0.7, 20),
     new THREE.MeshStandardMaterial({ color: 0xc04848, metalness: 0.4, roughness: 0.5 })
   );
   lasBase.rotation.x = Math.PI / 2;
-  lasBase.position.z = cmZ - 0.55 - 0.35;
+  lasBase.position.z = cmShipZ - 0.55 - 0.35;
   ship.add(lasBase);
   // Tower spire
   const lasTower = new THREE.Mesh(
@@ -3239,7 +3241,7 @@ function buildArtemis() {
     new THREE.MeshStandardMaterial({ color: 0xc04848, metalness: 0.4, roughness: 0.45 })
   );
   lasTower.rotation.x = Math.PI / 2;
-  lasTower.position.z = cmZ - 1.0 - 1.0;
+  lasTower.position.z = cmShipZ - 1.0 - 1.0;
   ship.add(lasTower);
   // Abort motor jet nozzles (4 around the base)
   for (let i = 0; i < 4; i++) {
@@ -3248,8 +3250,8 @@ function buildArtemis() {
       new THREE.CylinderGeometry(0.06, 0.10, 0.3, 10),
       new THREE.MeshStandardMaterial({ color: 0x2a2c30, metalness: 0.9, roughness: 0.3 })
     );
-    noz.position.set(Math.cos(ang) * 0.42, Math.sin(ang) * 0.42, cmZ - 0.85);
-    noz.lookAt(Math.cos(ang) * 0.8, Math.sin(ang) * 0.8, cmZ - 0.4);
+    noz.position.set(Math.cos(ang) * 0.42, Math.sin(ang) * 0.42, cmShipZ - 0.85);
+    noz.lookAt(Math.cos(ang) * 0.8, Math.sin(ang) * 0.8, cmShipZ - 0.4);
     ship.add(noz);
   }
   // LAS tip
@@ -3258,7 +3260,7 @@ function buildArtemis() {
     new THREE.MeshStandardMaterial({ color: 0x444444, metalness: 0.7 })
   );
   lasTip.rotation.x = -Math.PI / 2;
-  lasTip.position.z = cmZ - 1.0 - 2.0 - 0.2;
+  lasTip.position.z = cmShipZ - 1.0 - 2.0 - 0.2;
   ship.add(lasTip);
 
   // === 4 RS-25 main engines at bottom of core ===
