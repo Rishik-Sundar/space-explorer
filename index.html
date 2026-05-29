@@ -1645,6 +1645,69 @@ function makeFlameTexture() {
 }
 const FLAME_TEXTURE = makeFlameTexture();
 
+// === PROCEDURAL FIRE SHADER ===
+// Animated FBM-noise flame with white-hot core, yellow shoulder, orange envelope, smoky tip
+function createFlameMaterial() {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      uTime:    { value: 0 },
+      uOpacity: { value: 0 },
+      uColor:   { value: new THREE.Color(0xff8833) },
+      uHotCore: { value: new THREE.Color(0xfff4cc) },
+    },
+    vertexShader: `
+      varying vec2 vUv;
+      void main() {
+        vUv = uv;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: `
+      precision highp float;
+      ${NOISE_GLSL}
+      uniform float uTime;
+      uniform float uOpacity;
+      uniform vec3  uColor;
+      uniform vec3  uHotCore;
+      varying vec2 vUv;
+      void main() {
+        // vUv.y goes 0 (base) -> 1 (tip) along the flame
+        // vUv.x goes 0 -> 1 across the cone circumference
+        float along = vUv.y;
+        float across = vUv.x;
+        // Wrap-safe radial coord (cone seam): map [0,1] -> sin/cos
+        float ang = across * 6.2831853;
+        vec3 np = vec3(cos(ang) * 0.7, sin(ang) * 0.7, -along * 2.2);
+        // Animated turbulence — flowing downward (toward tip), faster near tip
+        float t = uTime * 1.8;
+        float n  = fbm(np * 2.0 + vec3(0.0, 0.0, t));
+        float n2 = fbm(np * 5.5 + vec3(t * 0.7, -t * 0.5, t * 1.3));
+        float flicker = n * 0.7 + n2 * 0.35;
+        // Carve the flame envelope — distort along by noise, fade near tip
+        float distortedAlong = along + (flicker - 0.5) * 0.35;
+        float envelope = smoothstep(1.05, 0.05, distortedAlong);  // 1 at base, 0 at tip
+        // Hot core: bright spine along center of cone (across ~ 0.5 and low along)
+        float coreShape = (1.0 - abs(across - 0.5) * 2.0);
+        coreShape = pow(max(coreShape, 0.0), 1.5);
+        float core = coreShape * smoothstep(0.6, 0.0, along) * (0.7 + flicker * 0.4);
+        // Color ramp: white-hot core -> yellow -> orange -> dim red at tip
+        vec3 yellow = vec3(1.0, 0.85, 0.4);
+        vec3 col = mix(uColor, yellow, core);
+        col = mix(col, uHotCore, core * 0.85);
+        // Darken tip slightly to suggest smoke transition
+        col = mix(col, col * vec3(0.85, 0.55, 0.35), smoothstep(0.55, 1.0, along));
+        // Final alpha: envelope * flicker, additive blending will brighten
+        float alpha = envelope * (0.55 + flicker * 0.55) * uOpacity;
+        gl_FragColor = vec4(col, alpha);
+      }
+    `,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    side: THREE.DoubleSide,
+  });
+}
+
 function makeTankTexture() {
   const c = document.createElement('canvas');
   c.width = 512; c.height = 1024;
@@ -1948,7 +2011,7 @@ function buildFuelTank() {
   // Realistic flame cone (wide base at bell exit, tapered tip extending out)
   const plume = new THREE.Mesh(
     new THREE.CylinderGeometry(0.06, 0.65, 3, 24, 1, true),
-    new THREE.MeshBasicMaterial({ color: 0xffaa44, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide })
+    createFlameMaterial()
   );
   plume.rotation.x = Math.PI / 2;
   plume.userData.baseZ = TANK_LEN / 2 + 2.5;
@@ -2149,7 +2212,7 @@ function buildCrewModule() {
   // Realistic flame cone
   const cPlume = new THREE.Mesh(
     new THREE.CylinderGeometry(0.05, 0.55, 2.4, 24, 1, true),
-    new THREE.MeshBasicMaterial({ color: 0xffaa44, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide })
+    createFlameMaterial()
   );
   cPlume.rotation.x = Math.PI / 2;
   cPlume.userData.baseZ = 5.7;
@@ -2516,7 +2579,7 @@ function buildBooster() {
   b.add(bGlow);
   const bPlume = new THREE.Mesh(
     new THREE.CylinderGeometry(0.06, 0.62, 2.8, 24, 1, true),
-    new THREE.MeshBasicMaterial({ color: 0xffaa44, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide })
+    createFlameMaterial()
   );
   bPlume.rotation.x = Math.PI / 2;
   bPlume.userData.baseZ = 6.2;
@@ -2662,7 +2725,7 @@ function makeEngineCluster(x, y, z, numEngines, radius = 0.45, length = 1.3, sta
     // Flame plume cone
     const plume = new THREE.Mesh(
       new THREE.CylinderGeometry(0.08, radius * 1.3, length * 2.5, 22, 1, true),
-      new THREE.MeshBasicMaterial({ color: 0xffaa44, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide })
+      createFlameMaterial()
     );
     plume.rotation.x = Math.PI / 2;
     const plumeBaseZ = length * 0.55 + length - 0.1;
@@ -2739,7 +2802,7 @@ function buildSRB(side) {
   // Plume
   const plume = new THREE.Mesh(
     new THREE.CylinderGeometry(0.08, 0.65, 3, 24, 1, true),
-    new THREE.MeshBasicMaterial({ color: 0xffaa44, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide })
+    createFlameMaterial()
   );
   plume.rotation.x = Math.PI / 2;
   plume.userData.baseZ = len / 2 + 1.2;
@@ -3236,7 +3299,7 @@ function buildArtemis() {
   orionGroup.add(smGlow);
   const smPlume = new THREE.Mesh(
     new THREE.CylinderGeometry(0.05, 0.32, 2.0, 18, 1, true),
-    new THREE.MeshBasicMaterial({ color: 0xffaa44, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide })
+    createFlameMaterial()
   );
   smPlume.rotation.x = Math.PI / 2;
   smPlume.userData.baseZ = smLen / 2 + 0.7;
@@ -3970,7 +4033,8 @@ function separateBoosters() {
       life: 60
     });
     booster.userData.glowDisc.material.opacity = 0;
-    booster.userData.plume.material.opacity = 0;
+    const bpm = booster.userData.plume.material;
+    if (bpm.uniforms) bpm.uniforms.uOpacity.value = 0; else bpm.opacity = 0;
   }
   // Remove booster engines from active engine list
   engineGlows.splice(3, 2);
@@ -4297,9 +4361,9 @@ const shipStats = SHIP_STATS[selectedShipType] || SHIP_STATS['hail-mary'];
 
 // Build alternate ship model if selected
 if (selectedShipType === 'discovery') buildDiscovery();
+else if (selectedShipType === 'artemis') buildArtemis();
 // After procedural is built, try to load a real GLB model if user has one
 tryLoadRealModel(selectedShipType);
-else if (selectedShipType === 'artemis') buildArtemis();
 
 intro.addEventListener('click', () => beginLaunchSequence(true));
 if (new URLSearchParams(window.location.search).has('autostart')) {
@@ -5082,8 +5146,15 @@ function animate() {
   for (let e = 0; e < engineGlows.length; e++) {
     engineGlows[e].material.opacity = glowOpacity * 1.1;
     engineGlows[e].material.color.copy(eColor);
-    enginePlumes[e].material.opacity = glowOpacity * 0.85;
-    enginePlumes[e].material.color.copy(ePlumeColor);
+    const plumeMat = enginePlumes[e].material;
+    if (plumeMat.uniforms) {
+      plumeMat.uniforms.uTime.value = t;
+      plumeMat.uniforms.uOpacity.value = glowOpacity * 1.15;
+      plumeMat.uniforms.uColor.value.copy(ePlumeColor);
+    } else {
+      plumeMat.opacity = glowOpacity * 0.85;
+      plumeMat.color.copy(ePlumeColor);
+    }
     // Stretch the flame cone along its length (mesh Y after rotation = world Z)
     // Keep base anchored at engine bell exit
     const ud = enginePlumes[e].userData;
