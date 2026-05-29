@@ -2,6 +2,8 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" href="data:,">
 <title>Stellar Drift — Hail Mary</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -2680,9 +2682,17 @@ scene.add(ship);
 // ALTERNATE SPACECRAFT — Discovery (Shuttle) and Artemis (SLS)
 // =============================================================
 function clearShipModel() {
-  while (ship.children.length > 0) {
-    const child = ship.children[0];
-    ship.remove(child);
+  const sharedShipChildren = new Set([shipLight, shipLight2, heatShieldVisuals]);
+  for (const child of [...ship.children]) {
+    if (!sharedShipChildren.has(child)) {
+      ship.remove(child);
+    }
+  }
+  for (const child of sharedShipChildren) {
+    if (child.parent !== ship) {
+      ship.add(child);
+    }
+    child.visible = true;
   }
   engineGlows.length = 0;
   enginePlumes.length = 0;
@@ -4400,6 +4410,8 @@ function adoptRealModel(m) {
   m.userData.isRealModel = true;
   // Measure the real model so we know where its "bottom" (engine end) is in ship space.
   // After orientPlace + ship.add, the model lives in ship local space.
+  ship.updateMatrixWorld(true);
+  m.updateMatrixWorld(true);
   const box = new THREE.Box3().setFromObject(m);
   const shipInv = new THREE.Matrix4().copy(ship.matrixWorld).invert();
   const minLocal = box.min.clone().applyMatrix4(shipInv);
@@ -4423,8 +4435,9 @@ function adoptRealModel(m) {
     plume.userData.height = plume.userData.height || 3;
   }
   // Hide procedural hull
+  const sharedShipChildren = new Set([shipLight, shipLight2, heatShieldVisuals]);
   for (const child of ship.children) {
-    if (child !== m && !enginePlumes.includes(child) && !engineGlows.includes(child)) {
+    if (child !== m && !sharedShipChildren.has(child) && !enginePlumes.includes(child) && !engineGlows.includes(child)) {
       child.visible = false;
     }
   }
