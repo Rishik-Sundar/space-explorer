@@ -3028,6 +3028,38 @@ function buildDiscovery() {
     strut.position.set(0, tankRad + 0.4, sz);
     ship.add(strut);
   }
+  // === LOX + LH2 cross-feed lines from ET to orbiter ===
+  // Two parallel pipes running along the +Y side of the tank carrying propellant
+  // to the orbiter's 3 SSME engines.
+  const feedMat = new THREE.MeshStandardMaterial({ color: 0x8a4818, metalness: 0.25, roughness: 0.75 });
+  const feedJointMat = new THREE.MeshStandardMaterial({ color: 0x404045, metalness: 0.8, roughness: 0.4 });
+  for (const xOffset of [-0.32, 0.32]) {
+    const radius = xOffset < 0 ? 0.13 : 0.10; // LH2 line slightly bigger
+    const feed = new THREE.Mesh(
+      new THREE.CylinderGeometry(radius, radius, tankLen * 0.88, 14),
+      feedMat
+    );
+    feed.rotation.x = Math.PI / 2;
+    feed.position.set(xOffset, tankRad + 0.18, 0);
+    ship.add(feed);
+    // Joint clamps every 2 units
+    for (let i = -3; i <= 3; i++) {
+      const clamp = new THREE.Mesh(
+        new THREE.TorusGeometry(radius * 1.6, 0.04, 8, 16),
+        feedJointMat
+      );
+      clamp.rotation.y = Math.PI / 2;
+      clamp.position.set(xOffset, tankRad + 0.18, i * 2);
+      ship.add(clamp);
+    }
+  }
+  // Umbilical connection bulge where feed lines meet the orbiter belly
+  const umbilical = new THREE.Mesh(
+    new THREE.BoxGeometry(0.85, 0.4, 1.0),
+    new THREE.MeshStandardMaterial({ color: 0x6a5a48, metalness: 0.5, roughness: 0.5 })
+  );
+  umbilical.position.set(0, tankRad + 0.45, 2.6);
+  ship.add(umbilical);
 }
 
 function buildArtemis() {
