@@ -4258,8 +4258,28 @@ const gltfLoader = new GLTFLoader();
 const GLB_SCALE = { 'discovery': 0.5, 'artemis': 0.4 };
 const stlLoader = new STLLoader();
 
-// Auto-orient + scale + position a loaded model (GLB or STL)
-function orientPlace(m, targetH, posOffset) {
+// Hide procedural ship pieces. Returns the array of previously visible children
+// so we can restore them if a model fails to load.
+function hideProceduralShip() {
+  const wereVisible = [];
+  for (const child of ship.children) {
+    if (child.visible) {
+      wereVisible.push(child);
+      child.visible = false;
+    }
+  }
+  return wereVisible;
+}
+function restoreProceduralShip(list) {
+  for (const c of list) c.visible = true;
+}
+
+// Auto-orient + scale + position a loaded model (GLB or STL).
+// Ship convention: -Z is forward/nose, +Z is back/engines, +Y is "up" relative to ship.
+// Most GLB rockets are authored with +Y up (nose at top, engines at bottom). After we
+// rotate X by -π/2, +Y maps to -Z so the nose ends up forward (correct).
+// `extraRot` lets a caller append a final rotation (Euler {x,y,z}) for models that need it.
+function orientPlace(m, targetH, posOffset, extraRot) {
   let box = new THREE.Box3().setFromObject(m);
   const size = box.getSize(new THREE.Vector3());
   const longest = Math.max(size.x, size.y, size.z);
@@ -4268,37 +4288,145 @@ function orientPlace(m, targetH, posOffset) {
   box = new THREE.Box3().setFromObject(m);
   const center = box.getCenter(new THREE.Vector3());
   m.position.sub(center);
-  if (size.y === longest) m.rotation.x = Math.PI / 2;
-  else if (size.x === longest) m.rotation.y = -Math.PI / 2;
+  if (size.y === longest)      m.rotation.x = -Math.PI / 2; // +Y up → -Z forward
+  else if (size.x === longest) m.rotation.y =  Math.PI / 2; // +X forward → -Z forward
+  // size.z === longest → already aligned (do nothing)
+  if (extraRot) {
+    if (extraRot.x) m.rotateX(extraRot.x);
+    if (extraRot.y) m.rotateY(extraRot.y);
+    if (extraRot.z) m.rotateZ(extraRot.z);
+  }
   m.position.add(posOffset);
 }
 
 // Load GLB or STL based on extension. Wraps STL geometry in a Mesh with default material.
-function loadAndOrient(url, targetH, posOffset, onLoad) {
+// onLoad fires AFTER the model is in the scene; onFail fires if loading errors.
+function loadAndOrient(url, targetH, posOffset, opts = {}) {
+  const { extraRot, onLoad, onFail } = opts;
   const isSTL = url.toLowerCase().endsWith('.stl');
+  const handle = (m) => {
+    orientPlace(m, targetH, posOffset, extraRot);
+    ship.add(m);
+    if (onLoad) onLoad(m);
+    console.log('[Stellar Drift] Loaded model:', url);
+  };
+  const fail = (err) => {
+    console.warn('[Stellar Drift] Failed to load model:', url, err);
+    if (onFail) onFail(err);
+  };
   try {
     if (isSTL) {
       stlLoader.load(url, (geom) => {
-        const mat = new THREE.MeshStandardMaterial({
+        const mat = opts.material || new THREE.MeshStandardMaterial({
           color: 0xc8c8c8, metalness: 0.4, roughness: 0.55, flatShading: false
         });
-        const m = new THREE.Mesh(geom, mat);
-        orientPlace(m, targetH, posOffset);
-        ship.add(m);
-        if (onLoad) onLoad(m);
-        console.log('[Stellar Drift] Loaded STL part:', url);
-      }, undefined, () => console.log('[Stellar Drift] STL not loaded:', url));
+        handle(new THREE.Mesh(geom, mat));
+      }, undefined, fail);
     } else {
-      gltfLoader.load(url, (gltf) => {
-        const m = gltf.scene;
-        orientPlace(m, targetH, posOffset);
-        ship.add(m);
-        if (onLoad) onLoad(m);
-        console.log('[Stellar Drift] Loaded GLB part:', url);
-      }, undefined, () => console.log('[Stellar Drift] GLB not loaded:', url));
+      gltfLoader.load(url, (gltf) => handle(gltf.scene), undefined, fail);
     }
   } catch (e) {
-    console.warn('[Stellar Drift] Model load error:', url, e);
+    fail(e);
+  }
+}
+
+// Position-based SLS paint scheme: orange core (central column), white SRBs (off-axis cylinders),
+// white Orion at the top. We use a custom ShaderMaterial that picks color based on
+// distance from the center axis and the vertical position along the rocket.
+function createSLSMaterial() {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      uOrange:   { value: new THREE.Color(0xb05a2a) }, // SLS core stage foam (burnt orange)
+      uWhite:    { value: new THREE.Color(0xe8e8ee) }, // SRBs / Orion / interstage
+      uDark:     { value: new THREE.Color(0x222222) }, // engine bells / dark equipment
+      uNoseY:    { value: 0.85 },                       // normalized Y (0..1) above which is Orion
+      uCoreR:    { value: 0.18 },                       // |x| <= this is core stage
+      uHalfH:    { value: 1.0 },                        // half-height (filled after geometry known)
+    },
+    vertexShader: `
+      varying vec3 vWorldPos;
+      varying vec3 vLocalPos;
+      varying vec3 vNormal;
+      void main() {
+        vLocalPos = position;
+        vNormal = normalize(normalMatrix * normal);
+        vec4 wp = modelMatrix * vec4(position, 1.0);
+        vWorldPos = wp.xyz;
+        gl_Position = projectionMatrix * viewMatrix * wp;
+      }
+    `,
+    fragmentShader: `
+      precision highp float;
+      uniform vec3 uOrange;
+      uniform vec3 uWhite;
+      uniform vec3 uDark;
+      uniform float uNoseY;
+      uniform float uCoreR;
+      uniform float uHalfH;
+      varying vec3 vLocalPos;
+      varying vec3 vNormal;
+      void main() {
+        // After orientPlace, the model has been rotated so its long axis = local Z.
+        // But our vLocalPos is BEFORE that rotation (raw geometry space). The original
+        // STL is Y-up, so use Y as the "along rocket" axis and X as "side" axis.
+        float yNorm = (vLocalPos.y) / (uHalfH * 2.0) + 0.5; // 0 = bottom, 1 = top
+        float radial = abs(vLocalPos.x) / uHalfH; // ~0 at center, larger off-axis
+        vec3 base;
+        if (yNorm > uNoseY) {
+          base = uWhite; // Orion / upper stage
+        } else if (radial > uCoreR * 1.4) {
+          base = uWhite; // SRBs (off the central column)
+        } else {
+          base = uOrange; // core stage
+        }
+        // Darken bottom 5% (engine bells)
+        if (yNorm < 0.05) base = mix(base, uDark, 0.7);
+        // Simple lambert shading so it doesn't look flat
+        vec3 lightDir = normalize(vec3(0.4, 0.9, 0.3));
+        float lambert = max(dot(normalize(vNormal), lightDir), 0.0);
+        float ambient = 0.35;
+        vec3 col = base * (ambient + lambert * 0.7);
+        gl_FragColor = vec4(col, 1.0);
+      }
+    `,
+  });
+}
+
+// After a real model loads we want to: (1) hide the procedural hull but (2) keep the
+// engine flames visible at the bottom of the new model. We re-parent each plume/glow
+// directly to `ship` so it survives the procedural hide, and reposition it at the
+// real model's exhaust point.
+function adoptRealModel(m) {
+  m.userData.isRealModel = true;
+  // Measure the real model so we know where its "bottom" (engine end) is in ship space.
+  // After orientPlace + ship.add, the model lives in ship local space.
+  const box = new THREE.Box3().setFromObject(m);
+  const shipInv = new THREE.Matrix4().copy(ship.matrixWorld).invert();
+  const minLocal = box.min.clone().applyMatrix4(shipInv);
+  const maxLocal = box.max.clone().applyMatrix4(shipInv);
+  const exhaustZ = maxLocal.z; // engines are at +Z (back of rocket) in ship space
+  const halfWidthX = (maxLocal.x - minLocal.x) * 0.5;
+  // Re-parent engine plumes/glows from procedural parts to ship directly so they
+  // remain visible after we hide the procedural shuttle, AND reposition them at
+  // the real model's exhaust point.
+  for (let i = 0; i < enginePlumes.length; i++) {
+    const plume = enginePlumes[i];
+    const glow = engineGlows[i];
+    // Distribute across the rocket's bottom width: spread along X around center.
+    const t = enginePlumes.length === 1 ? 0 : (i / (enginePlumes.length - 1)) - 0.5;
+    const ex = t * halfWidthX * 0.9;
+    ship.attach(plume); // preserves world transform, re-parents to ship
+    ship.attach(glow);
+    plume.position.set(ex, 0, exhaustZ - 0.1);
+    glow.position.set(ex, 0, exhaustZ - 0.4);
+    plume.userData.baseZ = exhaustZ - 0.1;
+    plume.userData.height = plume.userData.height || 3;
+  }
+  // Hide procedural hull
+  for (const child of ship.children) {
+    if (child !== m && !enginePlumes.includes(child) && !engineGlows.includes(child)) {
+      child.visible = false;
+    }
   }
 }
 
@@ -4306,30 +4434,44 @@ function tryLoadRealModel(shipType) {
   // Hail Mary is fictional — no real model.
   if (shipType === 'hail-mary') return;
   if (shipType === 'discovery') {
-    // Assemble from separate parts: external tank + 2 SRBs + orbiter
-    // Hide procedural ship parts first
-    for (const child of ship.children) child.visible = false;
-    loadAndOrient('./models/external-tank.glb', 16, new THREE.Vector3(0, 0, 0));
-    loadAndOrient('./models/srb.glb',           14, new THREE.Vector3( 2.6, 0, 0.5));
-    loadAndOrient('./models/srb.glb',           14, new THREE.Vector3(-2.6, 0, 0.5));
-    loadAndOrient('./models/orbiter.glb',        9, new THREE.Vector3(0, 2.5, 0.8));
+    // Use the all-in-one Discovery model (orbiter + ET + SRBs already assembled).
+    // Hide procedural ONLY after the model loads — failure leaves the procedural shuttle visible.
+    loadAndOrient('./models/discovery.glb', 22, new THREE.Vector3(0, 0, 0), {
+      onLoad: adoptRealModel,
+    });
     return;
   }
-  // Artemis: try .glb first, fall back to .stl
   if (shipType === 'artemis') {
-    // Try GLB
+    // Try GLB first, then STL fallback. STL gets a position-based SLS paint shader.
     fetch('./models/artemis.glb', { method: 'HEAD' }).then(r => {
       if (r.ok) {
-        for (const child of ship.children) child.visible = false;
-        loadAndOrient('./models/artemis.glb', 24, new THREE.Vector3(0, 0, 0));
+        loadAndOrient('./models/artemis.glb', 24, new THREE.Vector3(0, 0, 0), {
+          onLoad: adoptRealModel,
+        });
       } else {
-        // Fall back to STL
-        for (const child of ship.children) child.visible = false;
-        loadAndOrient('./models/artemis.stl', 24, new THREE.Vector3(0, 0, 0));
+        const slsMat = createSLSMaterial();
+        loadAndOrient('./models/artemis.stl', 24, new THREE.Vector3(0, 0, 0), {
+          material: slsMat,
+          onLoad: (m) => {
+            // Update the half-height uniform so the shader can paint properly.
+            const box = new THREE.Box3().setFromObject(m);
+            const size = box.getSize(new THREE.Vector3());
+            slsMat.uniforms.uHalfH.value = Math.max(size.x, size.y, size.z) * 0.5;
+            adoptRealModel(m);
+          },
+        });
       }
     }).catch(() => {
-      for (const child of ship.children) child.visible = false;
-      loadAndOrient('./models/artemis.stl', 24, new THREE.Vector3(0, 0, 0));
+      const slsMat = createSLSMaterial();
+      loadAndOrient('./models/artemis.stl', 24, new THREE.Vector3(0, 0, 0), {
+        material: slsMat,
+        onLoad: (m) => {
+          const box = new THREE.Box3().setFromObject(m);
+          const size = box.getSize(new THREE.Vector3());
+          slsMat.uniforms.uHalfH.value = Math.max(size.x, size.y, size.z) * 0.5;
+          adoptRealModel(m);
+        },
+      });
     });
     return;
   }
@@ -4825,13 +4967,21 @@ function animate() {
       ignitionOverlay.classList.remove('show');
     }
 
-    // ===== MANUAL THROTTLE — must hold W to overcome gravity =====
-    // No W: 30% (falls). W: 100% (slow climb). W+SHIFT: 175% (strong climb).
+    // ===== THROTTLE =====
+    // First 10s after ignition: auto-throttle so the vehicle ALWAYS clears the pad
+    // (real rockets don't ask the pilot to hold a button to lift off).
+    // After T+10s: manual — W: 100%, W+SHIFT: 175%, no W: 30% (falls back).
     const playerHoldsW = !!keys.KeyW;
     const playerHoldsShift = !!(keys.ShiftLeft || keys.ShiftRight);
-    const throttleBoost = playerHoldsW
-      ? (playerHoldsShift ? 1.75 : 1.0)
-      : 0.30;
+    const autoLiftoff = mt >= 0 && mt < 10;
+    let throttleBoost;
+    if (autoLiftoff) {
+      throttleBoost = playerHoldsShift ? 1.75 : (playerHoldsW ? 1.4 : 1.15);
+    } else {
+      throttleBoost = playerHoldsW
+        ? (playerHoldsShift ? 1.75 : 1.0)
+        : 0.30;
+    }
     if (mt >= 0) {
       let accel = 0;
       if (mt < 1) {
