@@ -4439,10 +4439,7 @@ function loadDiscoveryStackFromParts() {
     const tank = prepareRealModelPart(tankModel, tankLength);
     const srbA = prepareRealModelPart(srbModel, srbLength);
     const srbB = srbA.clone(true);
-    const orbiter = prepareRealModelPart(orbiterModel, orbiterLength, {
-      y: Math.PI,
-      z: -Math.PI / 2
-    });
+    const orbiter = prepareRealModelPart(orbiterModel, orbiterLength, { y: Math.PI });
 
     tank.position.set(0, 0, 0);
     const boosterX = 3.05;
@@ -4451,9 +4448,8 @@ function loadDiscoveryStackFromParts() {
     srbB.position.set(boosterX, 0, boosterZ);
 
     // The orbiter GLB is authored tail-first relative to the game's ship axis.
-    // The 180 degree yaw above points the nose toward the tank/booster noses,
-    // then the roll puts the wings across the shuttle stack.
-    const orbiterY = 3.45;
+    // The 180 degree yaw above points the nose toward the tank/booster noses.
+    const orbiterY = 4.1;
     const orbiterZ = 0.95;
     orbiter.position.set(0, orbiterY, orbiterZ);
 
@@ -4463,7 +4459,7 @@ function loadDiscoveryStackFromParts() {
     stack.add(makeDiscoveryAttachStrut(-1.15, 1.22, 4.9, 2.5, 0.06));
     stack.add(makeDiscoveryAttachStrut(1.15, 1.22, 4.9, 2.5, 0.06));
 
-    const stackRoll = Math.PI / 2;
+    const stackRoll = 0;
     stack.rotation.z = stackRoll;
     ship.add(stack);
     const baseEngineLayout = [
