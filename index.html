@@ -3569,6 +3569,36 @@ padGroup.add(shockwaveRing);
 
 scene.add(padGroup);
 
+// === REAL NASA GANTRY TOWER (models/gantry.glb) ===
+// If present, hide procedural tower struts and use the real model
+const gantryLoader = new GLTFLoader();
+gantryLoader.load(
+  './models/gantry.glb',
+  (gltf) => {
+    const gantry = gltf.scene;
+    // Auto-fit scale: measure the model and resize so it's ~24 units tall
+    const box = new THREE.Box3().setFromObject(gantry);
+    const size = box.getSize(new THREE.Vector3());
+    const targetHeight = 24;
+    const scale = targetHeight / Math.max(size.y, 0.001);
+    gantry.scale.set(scale, scale, scale);
+    // Move base of model to ground level
+    const newBox = new THREE.Box3().setFromObject(gantry);
+    const baseOffsetY = -newBox.min.y;
+    // Position next to the launch pad (offset on +X side, near where the procedural tower stood)
+    gantry.position.copy(PAD_CENTER_POS).add(new THREE.Vector3(9, baseOffsetY, 0));
+    scene.add(gantry);
+    console.log('[Stellar Drift] Loaded gantry tower');
+    // Hide procedural service tower elements (the BoxGeometry struts at towerX position)
+    for (const child of padGroup.children) {
+      const p = child.position;
+      if (p && p.x > 5 && p.x < 12) child.visible = false;
+    }
+  },
+  undefined,
+  () => { /* no gantry file — keep procedural tower */ }
+);
+
 // =============================================================
 // ENGINE PARTICLES (flame, smoke, sparks)
 // =============================================================
