@@ -537,20 +537,10 @@
   <div class="ship-picker">
     <div class="ship-picker-label">SELECT VEHICLE</div>
     <div class="ship-cards">
-      <div class="ship-card" data-ship="hail-mary">
-        <div class="ship-name">HAIL MARY</div>
-        <div class="ship-meta">ASTROPHAGE</div>
-        <div class="ship-stats">3+2 engines · 100% fuel · 2-min launch</div>
-      </div>
       <div class="ship-card" data-ship="discovery">
         <div class="ship-name">DISCOVERY</div>
         <div class="ship-meta">SPACE SHUTTLE</div>
         <div class="ship-stats">3+2 engines · 130% fuel · 8-min ascent</div>
-      </div>
-      <div class="ship-card" data-ship="artemis">
-        <div class="ship-name">ARTEMIS</div>
-        <div class="ship-meta">SLS · ORION</div>
-        <div class="ship-stats">4+2 engines · 150% fuel · TLI capable</div>
       </div>
     </div>
   </div>
@@ -4699,13 +4689,13 @@ function tryLoadRealModel(shipType) {
 const SHIP_STORAGE_KEY = 'stellarDriftShip';
 const launchQuery = pageQuery;
 const queryShipType = launchQuery.get('ship');
-const validShipTypes = ['hail-mary', 'discovery', 'artemis'];
+const validShipTypes = ['discovery'];
 const storedShipType = localStorage.getItem(SHIP_STORAGE_KEY);
 const selectedShipType = validShipTypes.includes(queryShipType)
   ? queryShipType
-  : (validShipTypes.includes(storedShipType) ? storedShipType : 'hail-mary');
-if (validShipTypes.includes(queryShipType) && storedShipType !== queryShipType) {
-  localStorage.setItem(SHIP_STORAGE_KEY, queryShipType);
+  : (validShipTypes.includes(storedShipType) ? storedShipType : 'discovery');
+if (storedShipType !== selectedShipType) {
+  localStorage.setItem(SHIP_STORAGE_KEY, selectedShipType);
 }
 // Highlight current selection
 document.querySelectorAll('.ship-card').forEach(card => {
