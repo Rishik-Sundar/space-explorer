@@ -2754,6 +2754,7 @@ function makeEngineCluster(x, y, z, numEngines, radius = 0.45, length = 1.3, sta
     const plumeBaseZ = length * 0.55 + length - 0.1;
     plume.userData.baseZ = plumeBaseZ;
     plume.userData.height = length * 2.5;
+    plume.userData.engineKind = 'main';
     plume.position.set(ex, ey, plumeBaseZ + length * 1.25);
     cluster.add(plume);
     engineGlows.push(glow);
@@ -2830,6 +2831,7 @@ function buildSRB(side) {
   plume.rotation.x = Math.PI / 2;
   plume.userData.baseZ = len / 2 + 1.2;
   plume.userData.height = 3;
+  plume.userData.engineKind = 'srb';
   plume.position.z = plume.userData.baseZ + 1.5;
   srb.add(plume);
   srb.userData = { glowDisc: glow, plume, exhaustPos: new THREE.Vector3(0, 0, len / 2 + 2) };
@@ -4511,9 +4513,9 @@ function loadDiscoveryStackFromParts() {
       y: p.x * sinRoll + p.y * cosRoll,
     }));
     const engineLayout = [
-      { x: srbAExit.x, y: srbAExit.y, z: srbAExit.z, height: 4.6, particleZ: srbAExit.z + 0.13 },
-      { x: srbBExit.x, y: srbBExit.y, z: srbBExit.z, height: 4.6, particleZ: srbBExit.z + 0.13 },
-      ...orbiterEngineLayout,
+      { x: srbAExit.x, y: srbAExit.y, z: srbAExit.z, height: 4.6, particleZ: srbAExit.z + 0.13, engineKind: 'srb' },
+      { x: srbBExit.x, y: srbBExit.y, z: srbBExit.z, height: 4.6, particleZ: srbBExit.z + 0.13, engineKind: 'srb' },
+      ...orbiterEngineLayout.map((p) => ({ ...p, engineKind: 'main' })),
     ];
     adoptRealModel(stack, engineLayout);
     leftBooster = srbA;
@@ -4636,6 +4638,7 @@ function adoptRealModel(m, engineLayout = null) {
     glow.position.set(ex, ey, ez - 0.05);
     plume.userData.baseZ = ez;
     plume.userData.height = plumeHeight;
+    plume.userData.engineKind = layout && layout.engineKind ? layout.engineKind : (plume.userData.engineKind || 'main');
     enginePositionsLocal[i] = new THREE.Vector3(ex, ey, layout ? layout.particleZ : ez + 0.45);
   }
   // Hide procedural hull
@@ -5530,22 +5533,31 @@ function animate() {
     ? new THREE.Color(0xff6818)   // bright orange during full burn
     : new THREE.Color(0xffaa44);  // softer orange normally
   for (let e = 0; e < engineGlows.length; e++) {
-    engineGlows[e].material.opacity = glowOpacity * 1.1;
+    const ud = enginePlumes[e].userData || {};
+    const isSrbPlume = ud.engineKind === 'srb';
+    const engineOpacity = glowOpacity * (isSrbPlume ? 1.45 : 1.05);
+    const engineStretch = plumeStretch * (isSrbPlume && isLaunch ? 1.82 : 1.0);
+    const plumeWidth = isSrbPlume && isLaunch
+      ? (1.35 + boostFactor * 2.35 + ignitionPulse * 0.45)
+      : (1 + boostFactor * 0.38);
+    const plumeColor = isSrbPlume && isLaunch
+      ? new THREE.Color(0xff5f12)
+      : ePlumeColor;
+    engineGlows[e].material.opacity = engineOpacity * 1.1;
     engineGlows[e].material.color.copy(eColor);
     const plumeMat = enginePlumes[e].material;
     if (plumeMat.uniforms) {
       plumeMat.uniforms.uTime.value = t;
-      plumeMat.uniforms.uOpacity.value = glowOpacity * 1.15;
-      plumeMat.uniforms.uColor.value.copy(ePlumeColor);
+      plumeMat.uniforms.uOpacity.value = engineOpacity * 1.18;
+      plumeMat.uniforms.uColor.value.copy(plumeColor);
     } else {
-      plumeMat.opacity = glowOpacity * 0.85;
-      plumeMat.color.copy(ePlumeColor);
+      plumeMat.opacity = engineOpacity * 0.85;
+      plumeMat.color.copy(plumeColor);
     }
     // Stretch the flame cone along its length (mesh Y after rotation = world Z)
     // Keep base anchored at engine bell exit
-    const ud = enginePlumes[e].userData;
-    const stretch = plumeStretch;
-    enginePlumes[e].scale.set(1 + boostFactor * 0.38, stretch, 1 + boostFactor * 0.38);
+    const stretch = engineStretch;
+    enginePlumes[e].scale.set(plumeWidth, stretch, plumeWidth);
     if (ud && ud.baseZ !== undefined) {
       enginePlumes[e].position.z = ud.baseZ + ud.height * stretch / 2;
     }
@@ -5578,15 +5590,24 @@ function animate() {
   const isHeavyLaunch = isLaunch && mtPart < 38 && shipInAtmo;
   const spawnRate = fuelEmpty ? 0 : (isHeavyLaunch ? 2.6 :
                     (boostFactor * (boosting ? 1.1 : 0.65) + (ignitionPulse > 0.3 ? 0.7 : 0)));
+  const hasSrbEngines = enginePlumes.length >= 2
+    && enginePlumes[0].userData.engineKind === 'srb'
+    && enginePlumes[1].userData.engineKind === 'srb';
+  const pickEngineIndex = () => (
+    isHeavyLaunch && hasSrbEngines && Math.random() < 0.84
+      ? Math.floor(Math.random() * 2)
+      : Math.floor(Math.random() * enginePositionsLocal.length)
+  );
 
   for (let i = 0; i < PCOUNT; i++) {
     if (pLife[i] <= 0 && Math.random() < spawnRate) {
-      const eIdx = Math.floor(Math.random() * enginePositionsLocal.length);
+      const eIdx = pickEngineIndex();
       const localPos = enginePositionsLocal[eIdx];
       const wp = localPos.clone().applyQuaternion(ship.quaternion).add(ship.position);
+      const isSrbParticle = enginePlumes[eIdx] && enginePlumes[eIdx].userData.engineKind === 'srb';
 
       const isSmoke = isHeavyLaunch && Math.random() < 0.42;
-      const spread = isSmoke ? 1.35 : 0.38;
+      const spread = isSmoke ? (isSrbParticle ? 2.0 : 1.35) : (isSrbParticle ? 0.62 : 0.38);
       pPos[i*3]   = wp.x + (Math.random() - 0.5) * spread;
       pPos[i*3+1] = wp.y + (Math.random() - 0.5) * spread;
       pPos[i*3+2] = wp.z + (Math.random() - 0.5) * spread;
@@ -5597,10 +5618,13 @@ function animate() {
         pSize[i] = 0;
       } else {
         // Hot flame
-        const back = forwardVec.clone().negate().multiplyScalar(18 + boostFactor * 74 + ignitionPulse * 50);
-        back.x += (Math.random() - 0.5) * 3.6;
-        back.y += (Math.random() - 0.5) * 3.6;
-        back.z += (Math.random() - 0.5) * 3.6;
+        const back = forwardVec.clone().negate().multiplyScalar(
+          isSrbParticle ? (24 + boostFactor * 92 + ignitionPulse * 62) : (18 + boostFactor * 74 + ignitionPulse * 50)
+        );
+        const sparkSpread = isSrbParticle ? 5.0 : 3.6;
+        back.x += (Math.random() - 0.5) * sparkSpread;
+        back.y += (Math.random() - 0.5) * sparkSpread;
+        back.z += (Math.random() - 0.5) * sparkSpread;
         back.addScaledVector(velocity, 0.5);
         pVel[i*3]   = back.x;
         pVel[i*3+1] = back.y;
@@ -5609,7 +5633,9 @@ function animate() {
         const life = isHeavyLaunch ? (0.42 + Math.random() * 0.52) : (0.55 + Math.random() * 0.75);
         pLife[i] = life;
         pMaxLife[i] = life;
-        pSize[i] = (isHeavyLaunch ? 22 : 14) + Math.random() * (isHeavyLaunch ? 26 : 17) + ignitionPulse * 28;
+        pSize[i] = (isHeavyLaunch ? (isSrbParticle ? 34 : 22) : 14)
+          + Math.random() * (isHeavyLaunch ? (isSrbParticle ? 38 : 26) : 17)
+          + ignitionPulse * 28;
 
         if (boosting || autoLaunch || ignitionPulse > 0.5) {
           const whiteCore = Math.random() < 0.48;
@@ -5658,7 +5684,7 @@ function animate() {
       for (let s = 0; s < SMOKE_COUNT; s++) {
         if (smokeLife[s] <= 0) {
           // Spawn from a random engine
-          const eIdx = Math.floor(Math.random() * enginePositionsLocal.length);
+          const eIdx = pickEngineIndex();
           const localPos = enginePositionsLocal[eIdx];
           const wp = localPos.clone().applyQuaternion(ship.quaternion).add(ship.position);
           const groundSpread = padSmoke ? 8.5 : 4.4;
