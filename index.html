@@ -1688,26 +1688,31 @@ function createFlameMaterial() {
         // Wrap-safe radial coord (cone seam): map [0,1] -> sin/cos
         float ang = across * 6.2831853;
         vec3 np = vec3(cos(ang) * 0.7, sin(ang) * 0.7, -along * 2.2);
-        // Animated turbulence — flowing downward (toward tip), faster near tip
-        float t = uTime * 1.8;
-        float n  = fbm(np * 2.0 + vec3(0.0, 0.0, t));
-        float n2 = fbm(np * 5.5 + vec3(t * 0.7, -t * 0.5, t * 1.3));
-        float flicker = n * 0.7 + n2 * 0.35;
-        // Carve the flame envelope — distort along by noise, fade near tip
-        float distortedAlong = along + (flicker - 0.5) * 0.35;
-        float envelope = smoothstep(1.05, 0.05, distortedAlong);  // 1 at base, 0 at tip
+        // Animated turbulence — fast white exhaust core, slower orange rolling edge.
+        float t = uTime * 2.25;
+        float n  = fbm(np * 2.4 + vec3(0.0, 0.0, t));
+        float n2 = fbm(np * 7.0 + vec3(t * 0.8, -t * 0.45, t * 1.45));
+        float n3 = fbm(np * 13.0 + vec3(-t * 1.2, t * 0.35, t * 0.8));
+        float flicker = n * 0.56 + n2 * 0.34 + n3 * 0.18;
+        // Carve the flame envelope — dense at the engine bell, ragged at the exhaust edge.
+        float distortedAlong = along + (flicker - 0.5) * (0.22 + along * 0.24);
+        float envelope = smoothstep(1.08, 0.02, distortedAlong);
+        float edge = pow(abs(across - 0.5) * 2.0, 1.8);
+        envelope *= mix(1.0, 0.72 + flicker * 0.5, edge);
         // Hot core: bright spine along center of cone (across ~ 0.5 and low along)
         float coreShape = (1.0 - abs(across - 0.5) * 2.0);
-        coreShape = pow(max(coreShape, 0.0), 1.5);
-        float core = coreShape * smoothstep(0.6, 0.0, along) * (0.7 + flicker * 0.4);
-        // Color ramp: white-hot core -> yellow -> orange -> dim red at tip
+        coreShape = pow(max(coreShape, 0.0), 1.15);
+        float core = coreShape * smoothstep(0.76, 0.0, along) * (0.78 + flicker * 0.42);
+        // Color ramp: white-hot core -> yellow -> orange -> dim sooty red at tip.
         vec3 yellow = vec3(1.0, 0.85, 0.4);
-        vec3 col = mix(uColor, yellow, core);
-        col = mix(col, uHotCore, core * 0.85);
-        // Darken tip slightly to suggest smoke transition
-        col = mix(col, col * vec3(0.85, 0.55, 0.35), smoothstep(0.55, 1.0, along));
-        // Final alpha: envelope * flicker, additive blending will brighten
-        float alpha = envelope * (0.55 + flicker * 0.55) * uOpacity;
+        vec3 orange = uColor;
+        vec3 redTip = vec3(0.95, 0.22, 0.06);
+        vec3 col = mix(orange, yellow, smoothstep(0.15, 0.58, core));
+        col = mix(col, uHotCore, core * 0.9);
+        col = mix(col, redTip, smoothstep(0.58, 1.0, along) * (0.38 + edge * 0.28));
+        col *= 0.86 + flicker * 0.42;
+        // Final alpha: stable dense core with ragged translucent edge.
+        float alpha = envelope * (0.68 + flicker * 0.46) * uOpacity;
         gl_FragColor = vec4(col, alpha);
       }
     `,
@@ -3748,7 +3753,7 @@ gantryLoader.load(
 // =============================================================
 // ENGINE PARTICLES (flame, smoke, sparks)
 // =============================================================
-const PCOUNT = 1200;
+const PCOUNT = 1800;
 const pPos = new Float32Array(PCOUNT * 3);
 const pCol = new Float32Array(PCOUNT * 3);
 const pSize = new Float32Array(PCOUNT);
@@ -3790,7 +3795,7 @@ const particles = new THREE.Points(pGeo, new THREE.ShaderMaterial({
 scene.add(particles);
 
 // === DEDICATED SMOKE SYSTEM (normal blending so smoke actually looks opaque) ===
-const SMOKE_COUNT = 350;
+const SMOKE_COUNT = 700;
 const smokePos = new Float32Array(SMOKE_COUNT * 3);
 const smokeCol = new Float32Array(SMOKE_COUNT * 3);
 const smokeSize = new Float32Array(SMOKE_COUNT);
@@ -3819,8 +3824,10 @@ const smokeParticles = new THREE.Points(smokeGeo, new THREE.ShaderMaterial({
     void main() {
       vec2 d = gl_PointCoord - 0.5;
       float r = length(d);
-      // Soft puffy edge — high opacity center
-      float a = smoothstep(0.5, 0.05, r) * 0.9;
+      // Soft puffy edge with a dense center so overlapping puffs read as smoke.
+      float softEdge = smoothstep(0.5, 0.03, r);
+      float core = smoothstep(0.34, 0.0, r);
+      float a = softEdge * (0.46 + core * 0.42);
       gl_FragColor = vec4(vColor, a);
     }
   `,
@@ -5515,12 +5522,12 @@ function animate() {
   // KILL engine flames if out of fuel during play (no thrust = no fire)
   const fuelEmpty = (gamePhase === 'play' && fuel <= 0);
   const baseGlow = fuelEmpty ? 0 : (boostFactor * (boosting ? 1.0 : 0.85) + ignitionPulse * 0.5);
-  const glowOpacity = Math.min(1.4, baseGlow * 1.3);
-  const plumeStretch = fuelEmpty ? 0.01 : (0.5 + boostFactor * 6.0 + ignitionPulse * 3.5);
+  const glowOpacity = Math.min(1.8, baseGlow * 1.48);
+  const plumeStretch = fuelEmpty ? 0.01 : (0.72 + boostFactor * 7.2 + ignitionPulse * 4.2);
   // White-hot center inside the bell, orange plume outside (matches real rocket exhaust)
   const eColor = new THREE.Color(0xfff0c0); // bright white-yellow at engine throat
   const ePlumeColor = boosting || autoLaunch
-    ? new THREE.Color(0xff7722)   // bright orange during full burn
+    ? new THREE.Color(0xff6818)   // bright orange during full burn
     : new THREE.Color(0xffaa44);  // softer orange normally
   for (let e = 0; e < engineGlows.length; e++) {
     engineGlows[e].material.opacity = glowOpacity * 1.1;
@@ -5538,7 +5545,7 @@ function animate() {
     // Keep base anchored at engine bell exit
     const ud = enginePlumes[e].userData;
     const stretch = plumeStretch;
-    enginePlumes[e].scale.set(1 + boostFactor * 0.25, stretch, 1 + boostFactor * 0.25);
+    enginePlumes[e].scale.set(1 + boostFactor * 0.38, stretch, 1 + boostFactor * 0.38);
     if (ud && ud.baseZ !== undefined) {
       enginePlumes[e].position.z = ud.baseZ + ud.height * stretch / 2;
     }
@@ -5568,8 +5575,8 @@ function animate() {
   const shipAltAbove = ship.position.distanceTo(LAUNCH_EARTH_POS) - earthPlanet.config.radius;
   const shipInAtmo = shipAltAbove < 70;
   // Smoke billows during entire in-atmosphere ascent
-  const isHeavyLaunch = isLaunch && mtPart < 25 && shipInAtmo;
-  const spawnRate = fuelEmpty ? 0 : (isHeavyLaunch ? 1.8 :
+  const isHeavyLaunch = isLaunch && mtPart < 38 && shipInAtmo;
+  const spawnRate = fuelEmpty ? 0 : (isHeavyLaunch ? 2.6 :
                     (boostFactor * (boosting ? 1.1 : 0.65) + (ignitionPulse > 0.3 ? 0.7 : 0)));
 
   for (let i = 0; i < PCOUNT; i++) {
@@ -5578,8 +5585,8 @@ function animate() {
       const localPos = enginePositionsLocal[eIdx];
       const wp = localPos.clone().applyQuaternion(ship.quaternion).add(ship.position);
 
-      const isSmoke = isHeavyLaunch && Math.random() < 0.6;
-      const spread = isSmoke ? 1.2 : 0.3;
+      const isSmoke = isHeavyLaunch && Math.random() < 0.42;
+      const spread = isSmoke ? 1.35 : 0.38;
       pPos[i*3]   = wp.x + (Math.random() - 0.5) * spread;
       pPos[i*3+1] = wp.y + (Math.random() - 0.5) * spread;
       pPos[i*3+2] = wp.z + (Math.random() - 0.5) * spread;
@@ -5590,24 +5597,25 @@ function animate() {
         pSize[i] = 0;
       } else {
         // Hot flame
-        const back = forwardVec.clone().negate().multiplyScalar(12 + boostFactor * 55 + ignitionPulse * 40);
-        back.x += (Math.random() - 0.5) * 2.5;
-        back.y += (Math.random() - 0.5) * 2.5;
-        back.z += (Math.random() - 0.5) * 2.5;
+        const back = forwardVec.clone().negate().multiplyScalar(18 + boostFactor * 74 + ignitionPulse * 50);
+        back.x += (Math.random() - 0.5) * 3.6;
+        back.y += (Math.random() - 0.5) * 3.6;
+        back.z += (Math.random() - 0.5) * 3.6;
         back.addScaledVector(velocity, 0.5);
         pVel[i*3]   = back.x;
         pVel[i*3+1] = back.y;
         pVel[i*3+2] = back.z;
 
-        const life = 0.6 + Math.random() * 0.8;
+        const life = isHeavyLaunch ? (0.42 + Math.random() * 0.52) : (0.55 + Math.random() * 0.75);
         pLife[i] = life;
         pMaxLife[i] = life;
-        pSize[i] = 14 + Math.random() * 16 + ignitionPulse * 25;
+        pSize[i] = (isHeavyLaunch ? 22 : 14) + Math.random() * (isHeavyLaunch ? 26 : 17) + ignitionPulse * 28;
 
         if (boosting || autoLaunch || ignitionPulse > 0.5) {
+          const whiteCore = Math.random() < 0.48;
           pCol[i*3]   = 1.0;
-          pCol[i*3+1] = 0.65 + Math.random() * 0.30;
-          pCol[i*3+2] = 0.25;
+          pCol[i*3+1] = whiteCore ? (0.88 + Math.random() * 0.12) : (0.48 + Math.random() * 0.28);
+          pCol[i*3+2] = whiteCore ? (0.58 + Math.random() * 0.20) : (0.08 + Math.random() * 0.14);
         } else {
           pCol[i*3]   = 0.40;
           pCol[i*3+1] = 0.70;
@@ -5644,7 +5652,8 @@ function animate() {
   // === SMOKE PARTICLES — billowing white/grey cloud during atmospheric ascent ===
   if (isHeavyLaunch) {
     // Spawn several smoke puffs per frame
-    const spawnCount = 4;
+    const padSmoke = mtPart < 13;
+    const spawnCount = padSmoke ? 10 : 7;
     for (let n = 0; n < spawnCount; n++) {
       for (let s = 0; s < SMOKE_COUNT; s++) {
         if (smokeLife[s] <= 0) {
@@ -5652,29 +5661,31 @@ function animate() {
           const eIdx = Math.floor(Math.random() * enginePositionsLocal.length);
           const localPos = enginePositionsLocal[eIdx];
           const wp = localPos.clone().applyQuaternion(ship.quaternion).add(ship.position);
-          smokePos[s*3]   = wp.x + (Math.random() - 0.5) * 4;
-          smokePos[s*3+1] = wp.y + (Math.random() - 0.5) * 2 - 1;
-          smokePos[s*3+2] = wp.z + (Math.random() - 0.5) * 4;
-          // Slow outward + downward billow (relative to ship's local frame)
+          const groundSpread = padSmoke ? 8.5 : 4.4;
+          smokePos[s*3]   = wp.x + (Math.random() - 0.5) * groundSpread;
+          smokePos[s*3+1] = wp.y + (Math.random() - 0.5) * (padSmoke ? 1.6 : 2.4) - (padSmoke ? 1.6 : 0.7);
+          smokePos[s*3+2] = wp.z + (Math.random() - 0.5) * groundSpread;
+          // Slow outward billow relative to the rocket, with wider rolling pad clouds early.
           const dirOut = new THREE.Vector3(
-            (Math.random() - 0.5) * 4,
-            (Math.random() - 0.5) * 2.5,
-            2 + Math.random() * 4
+            (Math.random() - 0.5) * (padSmoke ? 8 : 4.5),
+            (Math.random() - 0.5) * (padSmoke ? 1.2 : 2.1),
+            (padSmoke ? 2.8 : 2.0) + Math.random() * (padSmoke ? 5.5 : 4.0)
           ).applyQuaternion(ship.quaternion);
-          dirOut.multiplyScalar(2 + Math.random() * 5);
-          dirOut.addScaledVector(velocity, 0.15);
+          dirOut.multiplyScalar((padSmoke ? 2.8 : 2.0) + Math.random() * (padSmoke ? 6.0 : 4.5));
+          dirOut.addScaledVector(velocity, padSmoke ? 0.06 : 0.13);
           smokeVel[s*3]   = dirOut.x;
           smokeVel[s*3+1] = dirOut.y;
           smokeVel[s*3+2] = dirOut.z;
-          const life = 5.0 + Math.random() * 4.0;
+          const life = (padSmoke ? 7.5 : 5.2) + Math.random() * (padSmoke ? 5.5 : 4.2);
           smokeLife[s] = life;
           smokeMaxLife[s] = life;
-          smokeSize[s] = 140 + Math.random() * 120; // huge puffs
-          // Bright white-grey clouds (like shuttle launch reference)
-          const tone = 0.92 + Math.random() * 0.08;
-          smokeCol[s*3]   = tone;
-          smokeCol[s*3+1] = tone * 0.98;
-          smokeCol[s*3+2] = tone * 0.94;
+          smokeSize[s] = (padSmoke ? 185 : 125) + Math.random() * (padSmoke ? 165 : 130);
+          // Bright steam near the pad, warmer grey as it mixes with exhaust.
+          const tone = (padSmoke ? 0.82 : 0.74) + Math.random() * (padSmoke ? 0.17 : 0.20);
+          const warm = Math.random() * 0.08;
+          smokeCol[s*3]   = Math.min(1, tone + warm);
+          smokeCol[s*3+1] = Math.min(1, tone * 0.97 + warm * 0.35);
+          smokeCol[s*3+2] = Math.min(1, tone * (padSmoke ? 0.91 : 0.86));
           break;
         }
       }
@@ -5687,15 +5698,18 @@ function animate() {
       smokePos[s*3]   += smokeVel[s*3]   * dt;
       smokePos[s*3+1] += smokeVel[s*3+1] * dt;
       smokePos[s*3+2] += smokeVel[s*3+2] * dt;
-      // Slow puff drift (slight upward buoyancy on ground, sideways spread)
-      smokeVel[s*3+1] *= 0.992;
-      // Smoke expands as it dissipates
-      smokeSize[s] *= 1.012;
-      // Darken slightly as it cools / mixes with air
+      // Damp fast exhaust motion while adding slight buoyant lift to old puffs.
       const ratio = smokeLife[s] / smokeMaxLife[s];
-      smokeCol[s*3]   *= 0.998;
-      smokeCol[s*3+1] *= 0.998;
-      smokeCol[s*3+2] *= 0.998;
+      smokeVel[s*3] *= Math.pow(0.988, dt * 60);
+      smokeVel[s*3+1] = smokeVel[s*3+1] * Math.pow(0.99, dt * 60) + (1 - ratio) * 0.42 * dt;
+      smokeVel[s*3+2] *= Math.pow(0.988, dt * 60);
+      // Smoke expands as it dissipates
+      smokeSize[s] *= 1 + (0.009 + (1 - ratio) * 0.009) * dt * 60;
+      // Darken slightly as it cools / mixes with air
+      const cool = Math.pow(0.997, dt * 60);
+      smokeCol[s*3]   *= cool;
+      smokeCol[s*3+1] *= cool * 0.999;
+      smokeCol[s*3+2] *= cool * 0.998;
       if (smokeLife[s] <= 0) smokeSize[s] = 0;
     } else {
       smokeSize[s] = 0;
