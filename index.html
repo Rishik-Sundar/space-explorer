@@ -5520,6 +5520,8 @@ function animate() {
   currentSpeed = velocity.length();
 
   const forwardVec = new THREE.Vector3(0, 0, -1).applyQuaternion(ship.quaternion);
+  const mtPart = gamePhase === 'launch' ? (launchTimer - T_IGNITION) : 999;
+  const isLaunch = gamePhase === 'launch' && mtPart >= 0;
 
   // Engine glow modulation — realistic yellow-white flame colors
   // KILL engine flames if out of fuel during play (no thrust = no fire)
@@ -5564,7 +5566,6 @@ function animate() {
   }
 
   // Particle spawning — mission time relative
-  const mtPart = gamePhase === 'launch' ? (launchTimer - T_IGNITION) : 999;
   const heatWindowIntensity = gamePhase === 'launch'
     ? Math.max(0, 1 - Math.abs(mtPart - HEAT_EVENT_TIME) / 7)
     : 0;
@@ -5582,7 +5583,6 @@ function animate() {
   } else if (!thrusting && ignitionPulse <= 0.05) {
     ignitionOverlay.classList.remove('show');
   }
-  const isLaunch = gamePhase === 'launch' && mtPart >= 0;
   // Smoke only exists in atmosphere — vacuum of space has no smoke
   const shipAltAbove = ship.position.distanceTo(LAUNCH_EARTH_POS) - earthPlanet.config.radius;
   const shipInAtmo = shipAltAbove < 70;
