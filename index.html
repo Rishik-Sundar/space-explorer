@@ -5409,9 +5409,6 @@ function animate() {
       // Point ship in direction of motion
       const fw = velocity.clone().normalize();
       ship.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), fw);
-      // Snap camera to chase position behind ship
-      const chaseOff = new THREE.Vector3(0, 4.5, 22).applyQuaternion(ship.quaternion);
-      camera.position.copy(ship.position).add(chaseOff);
       countdownEl.textContent = '';
       ignitionOverlay.classList.remove('show');
       targetMarker.visible = false;
@@ -5420,6 +5417,13 @@ function animate() {
       stressHud.classList.remove('show');
       // Jettison stages — leaves just the capsule for Discovery + Artemis
       jettisonToCapsule();
+      // Jettison can move/re-anchor the ship to the orbiter, so set the final
+      // third-person orbit pose after separation.
+      ship.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), fw);
+      const chaseOff = new THREE.Vector3(0, 4.5, 22).applyQuaternion(ship.quaternion);
+      camera.position.copy(ship.position).add(chaseOff);
+      camera.up.copy(new THREE.Vector3(0, 1, 0).applyQuaternion(ship.quaternion));
+      camera.lookAt(ship.position.clone().addScaledVector(fw, 8));
       // Show big "ORBIT ACHIEVED" banner
       flashName.textContent = 'ORBIT ACHIEVED';
       flash.classList.add('show');
