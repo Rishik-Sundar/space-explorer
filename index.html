@@ -3723,29 +3723,42 @@ padGroup.add(shockwaveRing);
 scene.add(padGroup);
 
 // === REAL NASA GANTRY TOWER (models/gantry.glb) ===
-// If present, hide procedural tower struts and use the real model
+// If present, attach it to the pad and use it instead of the procedural service tower.
 const gantryLoader = new GLTFLoader();
 gantryLoader.load(
   './models/gantry.glb',
   (gltf) => {
     const gantry = gltf.scene;
-    // Auto-fit scale: measure the model and resize so it's ~24 units tall
+    gantry.name = 'real-launch-gantry';
+    gantry.traverse((child) => {
+      if (child.isMesh) {
+        child.castShadow = true;
+        child.receiveShadow = true;
+        if (child.material && child.material.isMaterial) {
+          child.material.metalness = Math.max(child.material.metalness || 0, 0.35);
+          child.material.roughness = Math.max(child.material.roughness || 0.45, 0.45);
+        }
+      }
+    });
+    // Auto-fit scale: measure the model and resize to shuttle launch tower scale.
     const box = new THREE.Box3().setFromObject(gantry);
     const size = box.getSize(new THREE.Vector3());
-    const targetHeight = 24;
+    const targetHeight = 22;
     const scale = targetHeight / Math.max(size.y, 0.001);
     gantry.scale.set(scale, scale, scale);
-    // Move base of model to ground level
+    gantry.updateMatrixWorld(true);
+    // Move base of model to pad-deck level.
     const newBox = new THREE.Box3().setFromObject(gantry);
     const baseOffsetY = -newBox.min.y;
-    // Position next to the launch pad (offset on +X side, near where the procedural tower stood)
-    gantry.position.copy(PAD_CENTER_POS).add(new THREE.Vector3(9, baseOffsetY, 0));
-    scene.add(gantry);
+    // Keep the gantry close enough that its service structure reads as part of the stack.
+    gantry.position.set(6.6, baseOffsetY + 0.08, -0.6);
+    gantry.rotation.y = -Math.PI / 2;
+    padGroup.add(gantry);
     console.log('[Stellar Drift] Loaded gantry tower');
-    // Hide procedural service tower elements (the BoxGeometry struts at towerX position)
+    // Hide procedural service tower elements; keep the pad deck, trench, lights and hold-down arms.
     for (const child of padGroup.children) {
       const p = child.position;
-      if (p && p.x > 5 && p.x < 12) child.visible = false;
+      if (child !== gantry && p && p.x > 5 && p.x < 12) child.visible = false;
     }
   },
   undefined,
