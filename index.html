@@ -2815,14 +2815,14 @@ function buildSRB(side) {
   srb.add(glow);
   // Plume
   const plume = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.08, 0.65, 3, 24, 1, true),
+    new THREE.CylinderGeometry(1.1, 0.24, 3.4, 32, 1, true),
     createFlameMaterial()
   );
   plume.rotation.x = Math.PI / 2;
   plume.userData.baseZ = len / 2 + 1.2;
-  plume.userData.height = 3;
+  plume.userData.height = 3.4;
   plume.userData.engineKind = 'srb';
-  plume.position.z = plume.userData.baseZ + 1.5;
+  plume.position.z = plume.userData.baseZ + plume.userData.height / 2;
   srb.add(plume);
   srb.userData = { glowDisc: glow, plume, exhaustPos: new THREE.Vector3(0, 0, len / 2 + 2) };
   return srb;
@@ -4503,8 +4503,8 @@ function loadDiscoveryStackFromParts() {
       y: p.x * sinRoll + p.y * cosRoll,
     }));
     const engineLayout = [
-      { x: srbAExit.x, y: srbAExit.y, z: srbAExit.z, height: 4.6, particleZ: srbAExit.z + 0.13, engineKind: 'srb' },
-      { x: srbBExit.x, y: srbBExit.y, z: srbBExit.z, height: 4.6, particleZ: srbBExit.z + 0.13, engineKind: 'srb' },
+      { x: srbAExit.x, y: srbAExit.y, z: srbAExit.z, height: 5.2, particleZ: srbAExit.z - 0.08, engineKind: 'srb' },
+      { x: srbBExit.x, y: srbBExit.y, z: srbBExit.z, height: 5.2, particleZ: srbBExit.z - 0.08, engineKind: 'srb' },
       ...orbiterEngineLayout.map((p) => ({ ...p, engineKind: 'main' })),
     ];
     adoptRealModel(stack, engineLayout);
@@ -4621,13 +4621,16 @@ function adoptRealModel(m, engineLayout = null) {
     const ex = layout ? layout.x : t * halfWidthX * 0.9;
     const ey = layout ? layout.y : 0;
     const ez = layout ? layout.z : exhaustZ - 0.1;
-    const plumeHeight = layout ? layout.height : (plume.userData.height || 3);
+    const geometryHeight = plume.userData.geometryHeight || plume.userData.height || 3;
+    const plumeHeight = layout ? layout.height : geometryHeight;
     ship.attach(plume); // preserves world transform, re-parents to ship
     ship.attach(glow);
-    plume.position.set(ex, ey, ez + plumeHeight / 2);
+    plume.position.set(ex, ey, ez + geometryHeight / 2);
     glow.position.set(ex, ey, ez - 0.05);
     plume.userData.baseZ = ez;
-    plume.userData.height = plumeHeight;
+    plume.userData.height = geometryHeight;
+    plume.userData.visualHeight = plumeHeight;
+    plume.userData.geometryHeight = geometryHeight;
     plume.userData.engineKind = layout && layout.engineKind ? layout.engineKind : (plume.userData.engineKind || 'main');
     enginePositionsLocal[i] = new THREE.Vector3(ex, ey, layout ? layout.particleZ : ez + 0.45);
   }
@@ -4759,6 +4762,7 @@ const FUEL_DRAIN_THRUST = 0.012; // per sec at full thrust
 const FUEL_DRAIN_BOOST = 0.030;
 let cameraMode = 0; // 0=chase, 1=orbit, 2=cockpit
 const cameraModeNames = ['CHASE', 'CINEMATIC ORBIT', 'COCKPIT'];
+let orbitChaseLockTimer = 0;
 
 function updateCameraModeUI() {
   cameraModeLabel.textContent = cameraModeNames[cameraMode];
@@ -5381,6 +5385,7 @@ function animate() {
     if (launchTimer >= LAUNCH_DURATION) {
       gamePhase = 'play';
       cameraMode = 0;
+      orbitChaseLockTimer = 5.0;
       cockpitFrame.classList.remove('active');
       issInsideMode = false;
       walkMode = false;
@@ -5527,10 +5532,10 @@ function animate() {
   for (let e = 0; e < engineGlows.length; e++) {
     const ud = enginePlumes[e].userData || {};
     const isSrbPlume = ud.engineKind === 'srb';
-    const engineOpacity = glowOpacity * (isSrbPlume ? 1.45 : 1.05);
-    const engineStretch = plumeStretch * (isSrbPlume && isLaunch ? 1.82 : 1.0);
+    const engineOpacity = glowOpacity * (isSrbPlume ? 1.75 : 1.05);
+    const engineStretch = plumeStretch * (isSrbPlume && isLaunch ? 1.28 : 1.0);
     const plumeWidth = isSrbPlume && isLaunch
-      ? (1.35 + boostFactor * 2.35 + ignitionPulse * 0.45)
+      ? (1.25 + boostFactor * 1.35 + ignitionPulse * 0.35)
       : (1 + boostFactor * 0.38);
     const plumeColor = isSrbPlume && isLaunch
       ? new THREE.Color(0xff5f12)
@@ -5548,10 +5553,12 @@ function animate() {
     }
     // Stretch the flame cone along its length (mesh Y after rotation = world Z)
     // Keep base anchored at engine bell exit
-    const stretch = engineStretch;
+    const geometryHeight = ud.geometryHeight || ud.height || 3;
+    const visualHeight = ud.visualHeight || geometryHeight;
+    const stretch = engineStretch * (visualHeight / geometryHeight);
     enginePlumes[e].scale.set(plumeWidth, stretch, plumeWidth);
     if (ud && ud.baseZ !== undefined) {
-      enginePlumes[e].position.z = ud.baseZ + ud.height * stretch / 2;
+      enginePlumes[e].position.z = ud.baseZ + geometryHeight * stretch / 2;
     }
   }
 
@@ -5596,14 +5603,19 @@ function animate() {
       const wp = localPos.clone().applyQuaternion(ship.quaternion).add(ship.position);
       const isSrbParticle = enginePlumes[eIdx] && enginePlumes[eIdx].userData.engineKind === 'srb';
 
-      const isSmoke = isHeavyLaunch && Math.random() < 0.42;
-      const spread = isSmoke ? (isSrbParticle ? 2.0 : 1.35) : (isSrbParticle ? 0.62 : 0.38);
+      const isSmoke = isHeavyLaunch && Math.random() < (isSrbParticle ? 0.72 : 0.42);
+      const spread = isSmoke ? (isSrbParticle ? 1.45 : 1.35) : (isSrbParticle ? 0.18 : 0.38);
       pPos[i*3]   = wp.x + (Math.random() - 0.5) * spread;
       pPos[i*3+1] = wp.y + (Math.random() - 0.5) * spread;
       pPos[i*3+2] = wp.z + (Math.random() - 0.5) * spread;
 
       if (isSmoke) {
         // Smoke goes to its own particle system — skip flame slot
+        pLife[i] = -1;
+        pSize[i] = 0;
+      } else if (isSrbParticle) {
+        // The SRB exhaust is the connected plume mesh. Large point sprites here
+        // read as separate floating columns, so keep SRB hot particles disabled.
         pLife[i] = -1;
         pSize[i] = 0;
       } else {
@@ -5744,6 +5756,11 @@ function animate() {
   }
 
   // ---------- CAMERA ----------
+  if (gamePhase === 'play' && cameraMode === 2) {
+    cameraMode = 0;
+    cockpitFrame.classList.remove('active');
+  }
+  if (orbitChaseLockTimer > 0) orbitChaseLockTimer = Math.max(0, orbitChaseLockTimer - dt);
   if (gamePhase === 'launch') {
     // Cockpit mode during launch lets the player go INSIDE the ship
     const mt = launchTimer - T_IGNITION;
@@ -5842,6 +5859,8 @@ function animate() {
     }
     if (cameraMode === 2) {
       // Snap in cockpit
+      camera.position.copy(camTarget);
+    } else if (orbitChaseLockTimer > 0) {
       camera.position.copy(camTarget);
     } else {
       camera.position.lerp(camTarget, 0.18);
