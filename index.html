@@ -828,14 +828,21 @@ const sky = new THREE.Mesh(
       ${NOISE_GLSL}
       void main() {
         vec3 d = normalize(vDir);
-        vec3 color = vec3(0.0013, 0.0020, 0.0065);
+        vec3 color = vec3(0.00045, 0.00075, 0.0028);
 
-        float galAxis = abs(dot(d, normalize(vec3(0.18, 0.91, -0.33))));
-        float galBand = pow(max(0.0, 1.0 - galAxis * 2.2), 3.2);
-        float dust = fbm(d * 3.5 + vec3(8.0, time * 0.01, 20.0));
-        vec3 dustTint = mix(vec3(0.018, 0.022, 0.038), vec3(0.08, 0.09, 0.12), dust);
-        color += dustTint * galBand * 0.22;
-        color += vec3(0.04, 0.05, 0.07) * galBand * 0.08;
+        vec3 galaxyNormal = normalize(vec3(0.18, 0.91, -0.33));
+        float galAxis = abs(dot(d, galaxyNormal));
+        float galBand = exp(-galAxis * galAxis * 38.0);
+        float wideBand = exp(-galAxis * galAxis * 8.0);
+        float dust = fbm(d * 5.5 + vec3(8.0, time * 0.01, 20.0));
+        float fineDust = fbm(d * 18.0 + vec3(-2.0, 4.0, time * 0.008));
+        float dustLane = smoothstep(0.38, 0.72, fineDust) * galBand;
+        vec3 blueHaze = vec3(0.025, 0.045, 0.105);
+        vec3 warmCore = vec3(0.135, 0.082, 0.060);
+        vec3 dustTint = mix(blueHaze, warmCore, smoothstep(0.28, 0.82, dust));
+        color += dustTint * galBand * 0.62;
+        color += vec3(0.010, 0.018, 0.042) * wideBand * 0.28;
+        color *= 1.0 - dustLane * 0.58;
 
         float starSeed = fract(sin(dot(d * 2100.0, vec3(127.1, 311.7, 74.7))) * 43758.5453);
         float starCore = pow(starSeed, 92.0);
@@ -846,11 +853,13 @@ const sky = new THREE.Mesh(
           vec3(1.0, 0.93, 0.82),
           smoothstep(0.4, 0.95, fract(starSeed * 17.0))
         );
-        color += starTint * starCore * twinkle * 1.3;
-        color += vec3(1.0) * starHalo * 0.18;
+        color += starTint * starCore * twinkle * (1.15 + galBand * 0.65);
+        color += vec3(1.0) * starHalo * (0.12 + wideBand * 0.12);
 
         float sparse = pow(fract(sin(dot(d * 780.0, vec3(12.9898, 78.233, 45.164))) * 43758.5453), 250.0);
-        color += vec3(1.0, 0.97, 0.92) * sparse * 0.35;
+        color += vec3(1.0, 0.97, 0.92) * sparse * 0.32;
+        float milkyStars = pow(fract(sin(dot(d * 3900.0, vec3(91.7, 41.2, 13.9))) * 23157.913), 120.0);
+        color += vec3(0.75, 0.84, 1.0) * milkyStars * galBand * 0.48;
 
         float limb = smoothstep(0.0, 0.18, abs(d.y));
         color += vec3(0.003, 0.004, 0.008) * limb;
@@ -956,7 +965,7 @@ function createStarfield(count, radius) {
   });
   return new THREE.Points(geo, mat);
 }
-const stars = createStarfield(8000, 45000);
+const stars = createStarfield(14000, 45000);
 scene.add(stars);
 
 // =============================================================
@@ -1323,6 +1332,7 @@ createPlanet({ name: 'Jupiter', type: 'gas',   radius: 58, distance: 880,  orbit
 createPlanet({ name: 'Saturn',  type: 'gas',   radius: 50, distance: 1180, orbitSpeed: 0.008, rotationSpeed: 0.09, rings: true, atmosphere: 0xddccaa });
 createPlanet({ name: 'Uranus',  type: 'ice',   radius: 30, distance: 1500, orbitSpeed: 0.006, rotationSpeed: 0.04, atmosphere: 0xaaeeff });
 createPlanet({ name: 'Neptune', type: 'ice',   radius: 30, distance: 1800, orbitSpeed: 0.004, rotationSpeed: 0.04, atmosphere: 0x4488ff });
+createPlanet({ name: 'Pluto',   type: 'rocky', radius: 12, distance: 2100, orbitSpeed: 0.003, rotationSpeed: 0.025 });
 
 // === LOCK EARTH AS LAUNCH SITE ===
 const earthPlanet = planets.find(p => p.config.name === 'Earth');
@@ -4150,6 +4160,8 @@ function computeTargetForward(missionTime, shipPos) {
 const keys = {};
 let pendingPitch = 0, pendingYaw = 0;
 let pointerLocked = false;
+let engineGimbalPitch = 0;
+let engineGimbalYaw = 0;
 
 window.addEventListener('keydown', e => {
   keys[e.code] = true;
@@ -5114,6 +5126,7 @@ function animate() {
     autoLaunch = true;
 
     const mt = launchTimer - T_IGNITION; // Mission time T (negative = countdown)
+    const targetForwardForLaunch = computeTargetForward(mt, ship.position);
     const doorOpen = smoothstep01((mt + 3.0) / 3.0);
     for (const door of blastDoors.children) {
       door.position.x = THREE.MathUtils.lerp(door.userData.closedX, door.userData.openX, doorOpen);
@@ -5230,8 +5243,7 @@ function animate() {
         accel = 0;
         boostFactor = 0;
       }
-      const targetFw = computeTargetForward(mt, ship.position);
-      velocity.addScaledVector(targetFw, accel * throttleBoost * dt);
+      velocity.addScaledVector(targetForwardForLaunch, accel * throttleBoost * dt);
       thrusting = mt < 115 && playerHoldsW;
     }
     // Launch gravity — balanced so W = climb, no W = fall (but recoverable)
@@ -5310,7 +5322,7 @@ function animate() {
     // Player input still works (above) and overrides this.
     if (mt > 2) {
       const fwNow = new THREE.Vector3(0, 0, -1).applyQuaternion(ship.quaternion);
-      const tgtFwAuto = computeTargetForward(mt, ship.position);
+      const tgtFwAuto = targetForwardForLaunch;
       const cross = new THREE.Vector3().crossVectors(fwNow, tgtFwAuto);
       const lenC = cross.length();
       if (lenC > 0.001) {
@@ -5323,8 +5335,20 @@ function animate() {
       }
     }
 
+    if (mt >= 0 && mt < 115) {
+      const localTarget = targetForwardForLaunch.clone().applyQuaternion(ship.quaternion.clone().invert());
+      const maxGimbal = 0.18;
+      const targetYaw = THREE.MathUtils.clamp(localTarget.x * 0.32, -maxGimbal, maxGimbal);
+      const targetPitch = THREE.MathUtils.clamp(-localTarget.y * 0.22, -maxGimbal, maxGimbal);
+      engineGimbalYaw += (targetYaw - engineGimbalYaw) * Math.min(1, dt * 4.5);
+      engineGimbalPitch += (targetPitch - engineGimbalPitch) * Math.min(1, dt * 4.5);
+    } else {
+      engineGimbalYaw += (0 - engineGimbalYaw) * Math.min(1, dt * 3);
+      engineGimbalPitch += (0 - engineGimbalPitch) * Math.min(1, dt * 3);
+    }
+
     // ===== Stress check (alignment with target attitude) =====
-    const targetFw = computeTargetForward(mt, ship.position);
+    const targetFw = targetForwardForLaunch;
     const shipFw = new THREE.Vector3(0, 0, -1).applyQuaternion(ship.quaternion);
     const deviation = shipFw.angleTo(targetFw); // 0 = perfect, π = backwards
 
@@ -5517,6 +5541,10 @@ function animate() {
   const forwardVec = new THREE.Vector3(0, 0, -1).applyQuaternion(ship.quaternion);
   const mtPart = gamePhase === 'launch' ? (launchTimer - T_IGNITION) : 999;
   const isLaunch = gamePhase === 'launch' && mtPart >= 0;
+  if (gamePhase !== 'launch') {
+    engineGimbalYaw += (0 - engineGimbalYaw) * Math.min(1, dt * 3);
+    engineGimbalPitch += (0 - engineGimbalPitch) * Math.min(1, dt * 3);
+  }
 
   // Engine glow modulation — realistic yellow-white flame colors
   // KILL engine flames if out of fuel during play (no thrust = no fire)
@@ -5557,6 +5585,11 @@ function animate() {
     const visualHeight = ud.visualHeight || geometryHeight;
     const stretch = engineStretch * (visualHeight / geometryHeight);
     enginePlumes[e].scale.set(plumeWidth, stretch, plumeWidth);
+    if (isSrbPlume) {
+      enginePlumes[e].rotation.set(Math.PI / 2, 0, 0);
+    } else {
+      enginePlumes[e].rotation.set(Math.PI / 2 + engineGimbalPitch, engineGimbalYaw, 0);
+    }
     if (ud && ud.baseZ !== undefined) {
       enginePlumes[e].position.z = ud.baseZ + geometryHeight * stretch / 2;
     }
