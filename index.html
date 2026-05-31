@@ -5431,13 +5431,13 @@ function animate() {
       pendingPitch = 0;
       pendingYaw = 0;
       stress = 0;
-      // Snap ship to a stable orbit ~at ISS altitude so the player can find it
+      // Transition into orbit from the ship's actual position. Do not teleport:
+      // keep the visual continuity from upper atmosphere into space.
       const earthToShip = ship.position.clone().sub(LAUNCH_EARTH_POS).normalize();
-      const targetOrbitR = 70; // just above ISS at 55, well above atmosphere at 32+58
-      ship.position.copy(LAUNCH_EARTH_POS).addScaledVector(earthToShip, targetOrbitR);
-      // Compute proper orbital velocity for this radius
+      const orbitR = Math.max(ship.position.distanceTo(LAUNCH_EARTH_POS), earthPlanet.config.radius + 48);
+      // Compute proper orbital velocity for this radius.
       const K = (earthPlanet.config.radius * earthPlanet.config.radius) * 1.2;
-      const orbSpeed = Math.sqrt(K / targetOrbitR);
+      const orbSpeed = Math.sqrt(K / orbitR);
       // Tangent direction — perpendicular to earth-up, in plane of motion
       const radial = earthToShip;
       let tangent;
@@ -5462,7 +5462,7 @@ function animate() {
       // Jettison can move/re-anchor the ship to the orbiter, so set the final
       // third-person orbit pose after separation.
       ship.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), fw);
-      const chaseOff = new THREE.Vector3(0, 3.2, 14).applyQuaternion(ship.quaternion);
+      const chaseOff = new THREE.Vector3(0, 2.2, 8.5).applyQuaternion(ship.quaternion);
       camera.position.copy(ship.position).add(chaseOff);
       camera.up.copy(new THREE.Vector3(0, 1, 0).applyQuaternion(ship.quaternion));
       camera.lookAt(ship.position);
@@ -5626,11 +5626,12 @@ function animate() {
   } else if (!thrusting && ignitionPulse <= 0.05) {
     ignitionOverlay.classList.remove('show');
   }
-  // Smoke only exists in atmosphere — vacuum of space has no smoke
+  // Smoke only exists in atmosphere — vacuum of space has no smoke.
+  // Dense smoke is early launch; upper atmosphere gets a thinner vapor/exhaust trail.
   const shipAltAbove = ship.position.distanceTo(LAUNCH_EARTH_POS) - earthPlanet.config.radius;
-  const shipInAtmo = shipAltAbove < 70;
-  // Smoke billows during entire in-atmosphere ascent
+  const shipInAtmo = shipAltAbove < 115;
   const isHeavyLaunch = isLaunch && mtPart < 38 && shipInAtmo;
+  const isUpperAtmoTrail = isLaunch && mtPart >= 38 && mtPart < 115 && shipAltAbove < 105;
   const spawnRate = fuelEmpty ? 0 : (isHeavyLaunch ? 2.6 :
                     (boostFactor * (boosting ? 1.1 : 0.65) + (ignitionPulse > 0.3 ? 0.7 : 0)));
   const hasSrbEngines = enginePlumes.length >= 2
@@ -5724,10 +5725,13 @@ function animate() {
   pGeo.attributes.size.needsUpdate = true;
 
   // === SMOKE PARTICLES — billowing white/grey cloud during atmospheric ascent ===
-  if (isHeavyLaunch) {
+  if (isHeavyLaunch || isUpperAtmoTrail) {
     // Spawn several smoke puffs per frame
     const padSmoke = mtPart < 13;
-    const spawnCount = padSmoke ? 10 : 7;
+    const trailFade = Math.max(0, Math.min(1, 1 - shipAltAbove / 105));
+    const spawnCount = isUpperAtmoTrail
+      ? Math.max(1, Math.ceil(3 * trailFade))
+      : (padSmoke ? 10 : 7);
     for (let n = 0; n < spawnCount; n++) {
       for (let s = 0; s < SMOKE_COUNT; s++) {
         if (smokeLife[s] <= 0) {
@@ -5735,31 +5739,37 @@ function animate() {
           const eIdx = pickEngineIndex();
           const localPos = enginePositionsLocal[eIdx];
           const wp = localPos.clone().applyQuaternion(ship.quaternion).add(ship.position);
-          const groundSpread = padSmoke ? 8.5 : 4.4;
+          const groundSpread = isUpperAtmoTrail ? 1.6 : (padSmoke ? 8.5 : 4.4);
           smokePos[s*3]   = wp.x + (Math.random() - 0.5) * groundSpread;
-          smokePos[s*3+1] = wp.y + (Math.random() - 0.5) * (padSmoke ? 1.6 : 2.4) - (padSmoke ? 1.6 : 0.7);
+          smokePos[s*3+1] = wp.y + (Math.random() - 0.5) * (isUpperAtmoTrail ? 1.1 : (padSmoke ? 1.6 : 2.4)) - (padSmoke ? 1.6 : 0.25);
           smokePos[s*3+2] = wp.z + (Math.random() - 0.5) * groundSpread;
           // Slow outward billow relative to the rocket, with wider rolling pad clouds early.
           const dirOut = new THREE.Vector3(
-            (Math.random() - 0.5) * (padSmoke ? 8 : 4.5),
-            (Math.random() - 0.5) * (padSmoke ? 1.2 : 2.1),
-            (padSmoke ? 2.8 : 2.0) + Math.random() * (padSmoke ? 5.5 : 4.0)
+            (Math.random() - 0.5) * (isUpperAtmoTrail ? 1.8 : (padSmoke ? 8 : 4.5)),
+            (Math.random() - 0.5) * (isUpperAtmoTrail ? 0.9 : (padSmoke ? 1.2 : 2.1)),
+            (isUpperAtmoTrail ? 1.0 : (padSmoke ? 2.8 : 2.0)) + Math.random() * (isUpperAtmoTrail ? 1.7 : (padSmoke ? 5.5 : 4.0))
           ).applyQuaternion(ship.quaternion);
-          dirOut.multiplyScalar((padSmoke ? 2.8 : 2.0) + Math.random() * (padSmoke ? 6.0 : 4.5));
-          dirOut.addScaledVector(velocity, padSmoke ? 0.06 : 0.13);
+          dirOut.multiplyScalar(isUpperAtmoTrail ? (0.6 + Math.random() * 1.3) : ((padSmoke ? 2.8 : 2.0) + Math.random() * (padSmoke ? 6.0 : 4.5)));
+          dirOut.addScaledVector(velocity, isUpperAtmoTrail ? 0.28 : (padSmoke ? 0.06 : 0.13));
           smokeVel[s*3]   = dirOut.x;
           smokeVel[s*3+1] = dirOut.y;
           smokeVel[s*3+2] = dirOut.z;
-          const life = (padSmoke ? 7.5 : 5.2) + Math.random() * (padSmoke ? 5.5 : 4.2);
+          const life = isUpperAtmoTrail
+            ? (2.4 + Math.random() * 2.2)
+            : ((padSmoke ? 7.5 : 5.2) + Math.random() * (padSmoke ? 5.5 : 4.2));
           smokeLife[s] = life;
           smokeMaxLife[s] = life;
-          smokeSize[s] = (padSmoke ? 185 : 125) + Math.random() * (padSmoke ? 165 : 130);
+          smokeSize[s] = isUpperAtmoTrail
+            ? ((42 + Math.random() * 65) * (0.3 + trailFade * 0.7))
+            : ((padSmoke ? 185 : 125) + Math.random() * (padSmoke ? 165 : 130));
           // Bright steam near the pad, warmer grey as it mixes with exhaust.
-          const tone = (padSmoke ? 0.82 : 0.74) + Math.random() * (padSmoke ? 0.17 : 0.20);
+          const tone = isUpperAtmoTrail
+            ? (0.62 + Math.random() * 0.20)
+            : ((padSmoke ? 0.82 : 0.74) + Math.random() * (padSmoke ? 0.17 : 0.20));
           const warm = Math.random() * 0.08;
-          smokeCol[s*3]   = Math.min(1, tone + warm);
-          smokeCol[s*3+1] = Math.min(1, tone * 0.97 + warm * 0.35);
-          smokeCol[s*3+2] = Math.min(1, tone * (padSmoke ? 0.91 : 0.86));
+          smokeCol[s*3]   = Math.min(1, (tone + warm) * (isUpperAtmoTrail ? 0.78 : 1));
+          smokeCol[s*3+1] = Math.min(1, (tone * 0.97 + warm * 0.35) * (isUpperAtmoTrail ? 0.82 : 1));
+          smokeCol[s*3+2] = Math.min(1, tone * (isUpperAtmoTrail ? 0.95 : (padSmoke ? 0.91 : 0.86)));
           break;
         }
       }
@@ -5886,7 +5896,7 @@ function animate() {
     // PLAY phase — camera mode based
     let camOff, lookAhead;
     if (cameraMode === 0) {
-      camOff = new THREE.Vector3(0, 3.2, 14);
+      camOff = new THREE.Vector3(0, 2.2, 8.5);
       lookAhead = 0;
     } else if (cameraMode === 1) {
       orbitCamAngle += dt * 0.4;
@@ -5906,13 +5916,13 @@ function animate() {
     if (cameraMode === 2) {
       // Snap in cockpit
       camera.position.copy(camTarget);
-    } else if (orbitChaseLockTimer > 0) {
+    } else if (cameraMode === 0 || orbitChaseLockTimer > 0) {
       camera.position.copy(camTarget);
     } else {
       camera.position.lerp(camTarget, 0.18);
     }
 
-    const targetFOV = (cameraMode === 2 ? 85 : (cameraMode === 0 ? 62 : 75)) + (boosting && thrusting ? 20 * boostFactor : 0);
+    const targetFOV = (cameraMode === 2 ? 85 : (cameraMode === 0 ? 54 : 75)) + (boosting && thrusting ? 20 * boostFactor : 0);
     camera.fov += (targetFOV - camera.fov) * 0.1;
     camera.updateProjectionMatrix();
 
