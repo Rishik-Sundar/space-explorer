@@ -5462,10 +5462,10 @@ function animate() {
       // Jettison can move/re-anchor the ship to the orbiter, so set the final
       // third-person orbit pose after separation.
       ship.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), fw);
-      const chaseOff = new THREE.Vector3(0, 4.5, 22).applyQuaternion(ship.quaternion);
+      const chaseOff = new THREE.Vector3(0, 3.2, 14).applyQuaternion(ship.quaternion);
       camera.position.copy(ship.position).add(chaseOff);
       camera.up.copy(new THREE.Vector3(0, 1, 0).applyQuaternion(ship.quaternion));
-      camera.lookAt(ship.position.clone().addScaledVector(fw, 8));
+      camera.lookAt(ship.position);
       // Show big "ORBIT ACHIEVED" banner
       flashName.textContent = 'ORBIT ACHIEVED';
       flash.classList.add('show');
@@ -5886,8 +5886,8 @@ function animate() {
     // PLAY phase — camera mode based
     let camOff, lookAhead;
     if (cameraMode === 0) {
-      camOff = new THREE.Vector3(0, 4.5, 22);
-      lookAhead = 8;
+      camOff = new THREE.Vector3(0, 3.2, 14);
+      lookAhead = 0;
     } else if (cameraMode === 1) {
       orbitCamAngle += dt * 0.4;
       camOff = new THREE.Vector3(Math.sin(orbitCamAngle) * 18, 3 + Math.sin(orbitCamAngle * 0.5) * 2, Math.cos(orbitCamAngle) * 18);
@@ -5912,7 +5912,7 @@ function animate() {
       camera.position.lerp(camTarget, 0.18);
     }
 
-    const targetFOV = (cameraMode === 2 ? 85 : 75) + (boosting && thrusting ? 20 * boostFactor : 0);
+    const targetFOV = (cameraMode === 2 ? 85 : (cameraMode === 0 ? 62 : 75)) + (boosting && thrusting ? 20 * boostFactor : 0);
     camera.fov += (targetFOV - camera.fov) * 0.1;
     camera.updateProjectionMatrix();
 
